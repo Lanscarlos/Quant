@@ -14,7 +14,7 @@ ENTRY_FILE   = "app.py"
 APP_NAME     = "Quant"
 APP_ICON     = "assets/icon.ico"        # 例如 "assets/icon.ico"，留空不设置
 ONE_FILE     = False     # False = 目录模式（启动更快）
-DEV_MODE = True
+DEV_MODE = False
 REQUIREMENTS = [         # 项目所需依赖
     "pywebview",
     "pyinstaller",
@@ -49,12 +49,13 @@ nicegui_path = subprocess.run(
 nicegui_dir = str(Path(nicegui_path).parent)
 
 # 4. 打包 — 直接通过虚拟环境 Python 调用 PyInstaller
+shutil.rmtree(VENV_DIR)
 cmd = [PY, "-m", "PyInstaller",
        "--onefile" if ONE_FILE else "--onedir",
        "--name", APP_NAME,
        "--icon", APP_ICON,
+       "--console" if DEV_MODE else "--windowed",
        "--add-data",f"{nicegui_dir}{os.pathsep}nicegui",
-       "--windowed" if DEV_MODE else "--nowindowed",
        ENTRY_FILE]
 run(cmd)
 
