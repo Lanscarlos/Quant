@@ -3,31 +3,32 @@ build.py - 创建干净虚拟环境并打包
 用法: python build.py
 """
 
+import os
 import sys
 import shutil
 import subprocess
 from pathlib import Path
 
 # ===== 配置区 =====
-ENTRY_FILE   = "main.py"
-APP_NAME     = "MyApp"
-APP_ICON     = ""        # 例如 "assets/icon.ico"，留空不设置
+ENTRY_FILE   = "app.py"
+APP_NAME     = "Quant"
+APP_ICON     = "assets/icon.ico"        # 例如 "assets/icon.ico"，留空不设置
 ONE_FILE     = False     # False = 目录模式（启动更快）
 REQUIREMENTS = [         # 项目所需依赖
+    "pywebview",
+    "pyinstaller",
     "nicegui",
-    # "nicegui-pack",
     # "requests",
     # "sqlalchemy",
 ]
 # ==================
 
 VENV_DIR = ".build_venv"
-PY   = Path(VENV_DIR) / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
-PACK = Path(VENV_DIR) / ("Scripts/nicegui-pack.exe" if sys.platform == "win32" else "bin/nicegui-pack")
+PY = Path(VENV_DIR) / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
 
-def run(cmd):
+def run(cmd, **kwargs):
     print(f"▶ {' '.join(map(str, cmd))}")
-    result = subprocess.run(cmd)
+    result = subprocess.run(cmd, **kwargs)
     if result.returncode != 0:
         sys.exit(result.returncode)
 
@@ -39,11 +40,20 @@ run([sys.executable, "-m", "venv", VENV_DIR])
 # 2. 安装依赖（只装项目需要的）
 run([PY, "-m", "pip", "install"] + REQUIREMENTS)
 
-# 3. 打包
-cmd = [PACK, "--onefile" if ONE_FILE else "--onedir", "--name", APP_NAME]
-if APP_ICON:
-    cmd += ["--icon", APP_ICON]
-cmd.append(ENTRY_FILE)
+# 3. 获取 nicegui 包路径
+nicegui_path = subprocess.run(
+    [PY, "-c", "import nicegui; print(nicegui.__file__)"],
+    capture_output=True, text=True
+).stdout.strip()
+nicegui_dir = str(Path(nicegui_path).parent)
+
+# 4. 打包 — 直接通过虚拟环境 Python 调用 PyInstaller
+cmd = [PY, "-m", "PyInstaller",
+       "--onefile" if ONE_FILE else "--onedir",
+       "--name", APP_NAME,
+       "--icon", APP_ICON,
+       "--add-data",f"{nicegui_dir}{os.pathsep}nicegui",
+       ENTRY_FILE]
 run(cmd)
 
 # 4. 清理
