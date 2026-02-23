@@ -49,7 +49,7 @@ nicegui_path = subprocess.run(
 nicegui_dir = str(Path(nicegui_path).parent)
 
 # 4. 打包 — 直接通过虚拟环境 Python 调用 PyInstaller
-shutil.rmtree(VENV_DIR)
+shutil.rmtree(f"dist/{APP_NAME}")
 cmd = [PY, "-m", "PyInstaller",
        "--onefile" if ONE_FILE else "--onedir",
        "--name", APP_NAME,
