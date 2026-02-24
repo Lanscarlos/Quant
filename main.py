@@ -1,6 +1,15 @@
 # main.py
 
-from launcher import launch_client
+from nicegui import ui
+import src.app as app
 
-if __name__ == '__main__':
-    launch_client()
+if __name__ in {'__main__', '__mp_main__'}:
+    ui.run(
+        port = app.PORT,
+        title = app.NAME,
+        favicon = app.ICON,
+        window_size = app.SIZE,
+        fullscreen = False,
+        native = True,
+        reload = False
+    )

@@ -8,11 +8,12 @@ import sys
 import shutil
 import subprocess
 from pathlib import Path
+import src.app as app
 
 # ===== 配置区 =====
-ENTRY_FILE   = "app.py"
-APP_NAME     = "Quant"
-APP_ICON     = "assets/icon.ico"        # 例如 "assets/icon.ico"，留空不设置
+ENTRY_FILE   = "main.py"
+APP_NAME     = app.NAME
+APP_ICON     = app.ICON        # 例如 "assets/icon.ico"，留空不设置
 ONE_FILE     = False     # False = 目录模式（启动更快）
 DEV_MODE = False
 REQUIREMENTS = [         # 项目所需依赖
