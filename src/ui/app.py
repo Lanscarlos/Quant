@@ -17,6 +17,8 @@ def index():
     with ui.row().classes('w-full h-screen gap-0'):
         navigation_bar.render()
 
+        ui.separator().props('vertical')
+
         # 右侧主面板
         with ui.column().classes('flex-1 h-full bg-gray-100 p-6 gap-4'):
             ui.label('📋 主面板').classes('text-2xl font-bold')
