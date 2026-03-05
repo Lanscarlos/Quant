@@ -1,5 +1,8 @@
 from nicegui import ui
 
+def on_click(path: str):
+    ui.navigate.to(f'/{path}')
+
 def render():
     with ui.column().classes('w-48 h-full bg-gray-100 p-2 gap-2'):
         with ui.column().classes('w-full flex-1'):
@@ -8,15 +11,15 @@ def render():
             ui.button(
                 icon='home',
                 text='首页',
-                on_click=lambda: ui.notify('首页')
+                on_click=lambda: on_click('')
             ).classes('w-full !bg-gray-100 !text-gray-500 rounded-lg') \
                 .props('unelevated align=left')
 
             ui.button(
                 icon='info',
-                text='首页',
+                text='关于',
                 color='gray-200',
-                on_click=lambda: ui.notify('关于')
+                on_click=lambda: on_click('test')
             ).classes('w-full !bg-gray-100 !text-gray-500 rounded-lg') \
                 .props('unelevated align=left')
 

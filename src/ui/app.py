@@ -1,12 +1,12 @@
 from nicegui import ui
 # from src.ui import match_panel
 from src.ui import navigation_bar
+from src.ui.page import home, test
 
 PORT = 19193
 NAME = "Quant"
 ICON = "assets/icon.ico"
 SIZE = (1080, 720)
-
 
 @ui.page('/')
 def index():
@@ -19,8 +19,10 @@ def index():
 
         ui.separator().props('vertical')
 
+        ui.sub_pages({'/': home.render, '/test': test.render}).classes('flex-1 h-full bg-gray-100 p-6 gap-4')
+
         # 右侧主面板
-        with ui.column().classes('flex-1 h-full bg-gray-100 p-6 gap-4'):
-            ui.label('📋 主面板').classes('text-2xl font-bold')
-            ui.separator()
-            ui.label('这里是主要内容区域')
+        # with ui.column().classes('flex-1 h-full bg-gray-100 p-6 gap-4'):
+        #     ui.label('📋 主面板').classes('text-2xl font-bold')
+        #     ui.separator()
+        #     ui.label('这里是主要内容区域')
