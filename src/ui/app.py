@@ -1,5 +1,5 @@
 from nicegui import ui
-from src import match_view
+from src.ui import match_view
 
 PORT = 19193
 NAME = "Quant"

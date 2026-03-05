@@ -1,9 +1,9 @@
 import re
 import requests
 from nicegui import ui, run
-from src.parse_analysis import parse_match_data
-from src.odds import fetch_odds
-from src.odds_history import fetch_odds_history
+from src.scraper.parse_analysis import parse_match_data
+from src.scraper.odds import fetch_odds
+from src.scraper.odds_history import fetch_odds_history
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
