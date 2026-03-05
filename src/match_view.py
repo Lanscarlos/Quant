@@ -1,6 +1,9 @@
+import re
 import requests
 from nicegui import ui, run
 from src.parse_analysis import parse_match_data
+from src.odds import fetch_odds
+from src.odds_history import fetch_odds_history
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
@@ -21,10 +24,36 @@ _BOOK_COLS = [
 ]
 
 
+def _extract_match_id(url: str) -> str:
+    """从 URL 中提取比赛 ID，如 .../2911120sb.htm → '2911120'"""
+    m = re.search(r'/(\d+)sb\.htm', url)
+    return m.group(1) if m else ''
+
+
+def _get_bookie_history(game_df, match_id: str, company_keyword: str) -> list[dict]:
+    """从 game_df 找到对应公司的记录ID和公司ID，再请求 OddsHistory 接口。"""
+    _empty = [{'胜': '-', '平': '-', '负': '-', '返还率': '-', '时间': '-'}]
+    if game_df.empty:
+        return _empty
+    match_rows = game_df[game_df['公司名'].str.contains(company_keyword, na=False)]
+    if match_rows.empty:
+        return _empty
+    info = match_rows.iloc[0]
+    return fetch_odds_history(info['记录ID'], match_id, info['公司ID'])
+
+
 def _fetch(url: str) -> dict:
     resp = requests.get(url, headers=_HEADERS, timeout=15)
     resp.encoding = "utf-8"
-    return parse_match_data(resp.text)
+    d = parse_match_data(resp.text)
+
+    match_id = _extract_match_id(url)
+    if match_id:
+        game_df, _ = fetch_odds(match_id)
+        d['wlh_odds'] = _get_bookie_history(game_df, match_id, 'William Hill')
+        d['lb_odds']  = _get_bookie_history(game_df, match_id, '立博')
+
+    return d
 
 
 def _fill(container, d: dict):
@@ -96,12 +125,13 @@ def render():
     # ── URL 输入区 ────────────────────────────────────────────────────
     with ui.row().classes('w-full items-center gap-2 mb-4'):
         url_input = ui.input(
+            value='https://zq.titan007.com/analysis/2911120sb.htm',
             placeholder='https://zq.titan007.com/analysis/2911120sb.htm'
         ).classes('flex-1').props('outlined dense')
         spinner = ui.spinner(size='sm').classes('hidden')
         err_label = ui.label('').classes('text-sm text-red-500')
 
-    load_btn = ui.button('加载', icon='download')
+        load_btn = ui.button('数据抓取', icon='download')
 
     result = ui.column().classes('w-full gap-0')
 
