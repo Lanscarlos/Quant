@@ -1,7 +1,7 @@
 # main.py
 
 from nicegui import ui
-import src.ui.app as app
+import src.ui.index as app
 
 if __name__ in {'__main__', '__mp_main__'}:
     ui.run(

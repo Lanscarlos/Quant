@@ -8,7 +8,7 @@ import sys
 import shutil
 import subprocess
 from pathlib import Path
-import src.ui.app as app
+import src.ui.index as app
 
 # ===== 配置区 =====
 ENTRY_FILE   = "main.py"

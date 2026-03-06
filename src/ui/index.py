@@ -1,7 +1,6 @@
 from nicegui import ui
-# from src.ui import match_panel
-from src.ui import navigation_bar
-from src.ui.page import home, test
+from src.ui.frame import navigation_bar
+from src.ui.panel import home, info
 
 PORT = 19193
 NAME = "Quant"
@@ -9,7 +8,7 @@ ICON = "assets/icon.ico"
 SIZE = (1080, 720)
 
 @ui.page('/')
-def index():
+def render():
     # 关键：让页面自身没有内边距，且铺满全屏
     ui.query('body').style('margin: 0; padding: 0; height: 100vh; background-color: #f8fafc')
     ui.query('.nicegui-content').classes('h-full p-0')
@@ -29,7 +28,7 @@ def index():
                 home.render()
 
             with ui.tab_panel('info'):
-                test.render()
+                info.render()
 
             with ui.tab_panel('settings'):
                 ui.label('⚙️ 设置页').classes('text-2xl')
