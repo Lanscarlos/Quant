@@ -214,25 +214,28 @@ CREATE TABLE match_history (
 ```sql
 CREATE TABLE league_standings (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    ref_match_id    INTEGER NOT NULL,  -- 关联的分析页比赛 ID
+    ref_match_id    INTEGER NOT NULL,  -- 关联的分析页比赛 ID（当前被分析的场次）
     team_id         INTEGER NOT NULL,
-    team_name       TEXT,
-    rank            INTEGER,           -- 排名
-    stand_type      TEXT NOT NULL,     -- 'total'=总,'home'=主场,'away'=客场
+    team_name       TEXT,              -- 球队名称（冗余存储，避免频繁 JOIN）
+    half_type       TEXT    NOT NULL,  -- 全场/半场：'ft'=全场, 'ht'=半场
+    stand_type      TEXT    NOT NULL,  -- 积分榜类型：'total'=总榜, 'home'=主场榜, 'away'=客场榜, 'last6'=近6场
+    rank            INTEGER,           -- 该队在此类积分榜中的排名
     played          INTEGER,           -- 已赛场次
-    wins            INTEGER,
-    draws           INTEGER,
-    losses          INTEGER,
-    goals_for       INTEGER,           -- 得球
-    goals_against   INTEGER,           -- 失球
-    goal_diff       INTEGER,           -- 净胜球
+    wins            INTEGER,           -- 胜场数
+    draws           INTEGER,           -- 平场数
+    losses          INTEGER,           -- 负场数
+    goals_for       INTEGER,           -- 进球数（得球）
+    goals_against   INTEGER,           -- 失球数
+    goal_diff       INTEGER,           -- 净胜球（goals_for - goals_against）
     points          INTEGER,           -- 积分
-    win_rate        REAL,              -- 胜率，如 0.043
-    is_relegation   INTEGER DEFAULT 0, -- 是否降级区
+    win_rate        REAL,              -- 胜率，如 0.40 = 40%
+    is_relegation   INTEGER DEFAULT 0, -- 是否处于降级区（1=是, 0=否）
     scraped_at      TEXT    DEFAULT (datetime('now')),
     FOREIGN KEY (ref_match_id) REFERENCES matches(id),
     FOREIGN KEY (team_id)      REFERENCES teams(id)
 );
+
+CREATE INDEX idx_standings_match ON league_standings(ref_match_id, team_id, half_type, stand_type);
 ```
 
 ---
