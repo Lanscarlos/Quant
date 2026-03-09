@@ -119,6 +119,15 @@ def parse_detail(html: str) -> dict:
     return record
 
 
+def save_to_db(conn, record: dict) -> int:
+    """Persist standings from a single match detail record to SQLite.
+
+    Returns the number of rows written (16 rows per match: 2 sides × 2 periods × 4 scopes).
+    """
+    from src.db.repo.standings import upsert_standings
+    return upsert_standings(conn, record)
+
+
 def export_csv(data: list[dict], out_path: Path) -> None:
     """Write records to a UTF-8 CSV (with BOM for Excel compatibility)."""
     if not data:
@@ -135,6 +144,12 @@ if __name__ == "__main__":
     import io, sys
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from src.db import get_conn, init_db
+    conn = get_conn()
+    init_db()
+
     match_id = "2921107"
     print(f"Fetching match detail for {match_id} ...")
     html = fetch_html(match_id)
@@ -147,6 +162,9 @@ if __name__ == "__main__":
     print(f"home FT total rank : {record.get('home_ft_total_rank')}")
     print(f"away FT total rank : {record.get('away_ft_total_rank')}")
 
+    count = save_to_db(conn, record)
+    print(f"DB written : {count} rows")
+
     out = Path(__file__).parent.parent.parent / "docs" / "match_detail.csv"
     export_csv([record], out)
-    print(f"Saved -> {out}")
+    print(f"CSV saved  -> {out}")

@@ -114,6 +114,21 @@ def fetch_match_odds(mid: str | int, save_dir: Path | None = None) -> list[dict]
     return parse_odds(js)
 
 
+def save_to_db(conn, schedule_id: int, records: list[dict]) -> dict:
+    """Persist odds for a single match to SQLite.
+
+    Writes in dependency order: companies → odds.
+    Returns a dict with inserted/replaced counts per table.
+    """
+    from src.db.repo.companies import upsert_companies
+    from src.db.repo.odds import upsert_odds
+
+    return {
+        "companies": upsert_companies(conn, records),
+        "odds":      upsert_odds(conn, schedule_id, records),
+    }
+
+
 def export_csv(data: list[dict], out_path: Path) -> None:
     """Write records to a UTF-8 CSV file (with BOM for Excel compatibility)."""
     if not data:
@@ -129,6 +144,12 @@ if __name__ == "__main__":
     import io, sys
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from src.db import get_conn, init_db
+    conn = get_conn()
+    init_db()
+
     target_id = "2921107"
     docs_dir = Path(__file__).parent.parent.parent / "docs"
     print(f"Fetching odds for match {target_id} ...")
@@ -142,6 +163,9 @@ if __name__ == "__main__":
         print(f"cur   W/D/L     : {first.get('cur_win')} / {first.get('cur_draw')} / {first.get('cur_lose')}")
         print(f"kelly W/D/L     : {first.get('kelly_win')} / {first.get('kelly_draw')} / {first.get('kelly_lose')}")
 
+    counts = save_to_db(conn, int(target_id), records)
+    print(f"DB written : {counts}")
+
     out = Path(__file__).parent.parent.parent / "docs" / "match_odds_list.csv"
     export_csv(records, out)
-    print(f"Saved -> {out}")
+    print(f"CSV saved  -> {out}")

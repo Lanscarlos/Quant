@@ -109,6 +109,28 @@ def fetch_odds_history(
     return parse_history(html)
 
 
+def save_to_db(
+    conn,
+    record_id: int,
+    schedule_id: int,
+    company_id: int,
+    records: list[dict],
+    match_year: int,
+) -> int:
+    """Persist odds history for a single company + match to SQLite.
+
+    Args:
+        record_id:   match_odds.record_id — FK to parent odds row.
+        schedule_id: match schedule_id for fast per-match queries.
+        company_id:  company_id for fast per-company filters.
+        records:     raw output of fetch_odds_history().
+        match_year:  year of the match, used to complete "MM-DD HH:MM" timestamps.
+    Returns the number of rows written.
+    """
+    from src.db.repo.odds_history import upsert_odds_history
+    return upsert_odds_history(conn, record_id, schedule_id, company_id, records, match_year)
+
+
 def export_csv(data: list[dict], out_path: Path) -> None:
     """Write records to a UTF-8 CSV file (with BOM for Excel compatibility)."""
     if not data:
@@ -121,8 +143,14 @@ def export_csv(data: list[dict], out_path: Path) -> None:
 
 
 if __name__ == "__main__":
-    import io, sys
+    import io, sys, datetime
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from src.db import get_conn, init_db
+    conn = get_conn()
+    init_db()
 
     target_cid = "115"
     target_rid = "151025873"
@@ -139,6 +167,16 @@ if __name__ == "__main__":
             print(f"Opening W/D/L : {opening['win']} / {opening['draw']} / {opening['lose']}")
         print(f"Latest  W/D/L : {latest['win']} / {latest['draw']} / {latest['lose']}  @ {latest['change_time']}")
 
+    count = save_to_db(
+        conn,
+        record_id=int(target_rid),
+        schedule_id=int(target_mid),
+        company_id=int(target_cid),
+        records=records,
+        match_year=datetime.date.today().year,
+    )
+    print(f"DB written : {count} rows")
+
     out = Path(__file__).parent.parent.parent / "docs" / "match_odds_history.csv"
     export_csv(records, out)
-    print(f"Saved -> {out}")
+    print(f"CSV saved  -> {out}")
