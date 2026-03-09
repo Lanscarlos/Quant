@@ -102,6 +102,23 @@ def fetch_match_list(url: str = _DATA_URL) -> tuple[str, list[dict]]:
     return date_str, result
 
 
+def save_to_db(conn, records: list[dict]) -> dict:
+    """Persist match list records to SQLite.
+
+    Writes in dependency order: leagues → teams → matches.
+    Returns a dict with inserted/replaced counts per table.
+    """
+    from src.db.repo.leagues import upsert_leagues
+    from src.db.repo.teams import upsert_teams
+    from src.db.repo.matches import upsert_matches
+
+    return {
+        "leagues": upsert_leagues(conn, records),
+        "teams":   upsert_teams(conn, records),
+        "matches": upsert_matches(conn, records),
+    }
+
+
 def export_csv(data: list[dict], out_path: Path) -> None:
     """Write records to a UTF-8 CSV file (with BOM for Excel compatibility)."""
     if not data:
@@ -117,11 +134,21 @@ if __name__ == "__main__":
     import sys, io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
+    # --- DB setup (only needed when running this file directly) ---
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from src.db import get_conn, init_db
+    conn = get_conn()
+    init_db()
+
     print(f"Fetching {_DATA_URL} ...")
-    date_str, data = fetch_match_list()
+    date_str, records = fetch_match_list()
     print(f"Match date : {date_str}")
-    print(f"Total rows : {len(data)}")
+    print(f"Total rows : {len(records)}")
+
+    counts = save_to_db(conn, records)
+    print(f"DB written : {counts}")
 
     out = Path(__file__).parent.parent.parent / "docs" / "match_list.csv"
-    export_csv(data, out)
-    print(f"Saved -> {out}")
+    export_csv(records, out)
+    print(f"CSV saved  -> {out}")
