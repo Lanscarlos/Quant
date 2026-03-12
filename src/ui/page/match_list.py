@@ -2,6 +2,7 @@ from nicegui import ui, run
 
 from src.db import get_conn
 from src.service.match_list import fetch_match_list
+from src.sync.coordinator import should_fetch_match_list
 
 _STATUS_LABEL = {
     0:   "未开赛",
@@ -142,3 +143,13 @@ def render():
 
         # 初始加载
         _set_filter('全部', None)
+
+        # 若数据陈旧（DB 为空或超过 10 分钟），页面渲染后立即自动拉取一次
+        async def _auto_fetch_if_stale():
+            if should_fetch_match_list():
+                await _on_refresh()
+
+        ui.timer(0, _auto_fetch_if_stale, once=True)
+
+        # 每 60 秒从 DB 刷新一次表格显示（跟进后台或手动刷新写入的新数据）
+        ui.timer(60, _reload_table)

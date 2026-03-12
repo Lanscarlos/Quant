@@ -1,0 +1,94 @@
+"""
+Freshness-aware decision helpers.
+
+should_fetch_*() 只做一件事：回答"要不要发 HTTP 请求"。
+UI 层在调用 service 前先问一下，避免冗余抓取。
+
+新鲜度阈值策略：
+  完场 (-1):    detail/odds 只抓一次，有数据就永不重抓
+  进行中 (1/3): odds 2 分钟过期；detail 不重抓
+  未开赛 (0):   odds 10 分钟过期；detail 6 小时过期
+"""
+from datetime import datetime, timedelta
+
+from src.db import get_conn
+
+
+def _is_stale(fetched_at: str | None, threshold: timedelta) -> bool:
+    """fetched_at 为空或超过 threshold 则视为过期。"""
+    if fetched_at is None:
+        return True
+    return datetime.now() - datetime.fromisoformat(fetched_at) > threshold
+
+
+def _match_status(schedule_id: int) -> int | None:
+    row = get_conn().execute(
+        "SELECT status FROM matches WHERE schedule_id = ?", (schedule_id,)
+    ).fetchone()
+    return int(row[0]) if row else None
+
+
+# ── match_list ────────────────────────────────────────────────────────────────
+
+_LIST_STALE = timedelta(minutes=10)
+
+
+def should_fetch_match_list() -> bool:
+    """初始加载时用：DB 为空或超过 10 分钟未更新则返回 True。"""
+    row = get_conn().execute("SELECT MIN(fetched_at) FROM matches").fetchone()
+    return _is_stale(row[0] if row else None, _LIST_STALE)
+
+
+# ── match_detail ──────────────────────────────────────────────────────────────
+
+_DETAIL_STALE = timedelta(hours=6)
+
+
+def should_fetch_detail(schedule_id: int) -> bool:
+    """True → 调用 fetch_match_detail()；False → 直接读 DB。"""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT fetched_at FROM match_standings WHERE schedule_id = ? LIMIT 1",
+        (schedule_id,),
+    ).fetchone()
+    if _match_status(schedule_id) == -1:
+        return row is None      # 完场：DB 没有才抓，有了永不重抓
+    return _is_stale(row[0] if row else None, _DETAIL_STALE)
+
+
+# ── match_odds_list ───────────────────────────────────────────────────────────
+
+_ODDS_THRESHOLDS: dict[int, timedelta] = {
+    1: timedelta(minutes=2),    # 上半场
+    3: timedelta(minutes=2),    # 下半场
+    0: timedelta(minutes=10),   # 未开赛
+}
+_ODDS_STALE_DEFAULT = timedelta(minutes=30)
+
+
+def should_fetch_odds(schedule_id: int) -> bool:
+    """True → 调用 fetch_match_odds_list()；False → 直接读 DB。"""
+    conn = get_conn()
+    status = _match_status(schedule_id)
+    if status == -1:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM match_odds WHERE schedule_id = ?", (schedule_id,)
+        ).fetchone()[0]
+        return count == 0       # 完场：有数据就不再抓
+    row = conn.execute(
+        "SELECT MIN(fetched_at) FROM match_odds WHERE schedule_id = ?", (schedule_id,)
+    ).fetchone()
+    threshold = _ODDS_THRESHOLDS.get(status, _ODDS_STALE_DEFAULT)
+    return _is_stale(row[0] if row else None, threshold)
+
+
+# ── odds_history ──────────────────────────────────────────────────────────────
+
+def should_fetch_history(record_id: int, schedule_id: int) -> bool:
+    """True → 调用 fetch_odds_history()；False → 直接读 DB。"""
+    count = get_conn().execute(
+        "SELECT COUNT(*) FROM odds_history WHERE record_id = ?", (record_id,)
+    ).fetchone()[0]
+    if _match_status(schedule_id) == -1:
+        return count == 0       # 完场：抓过一次就不再抓
+    return True                 # 进行中/未开赛：用户主动点击则总是刷新
