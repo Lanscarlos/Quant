@@ -150,7 +150,11 @@ if __name__ == "__main__":
     conn = get_conn()
     init_db()
 
-    match_id = "2921107"
+    row = conn.execute("SELECT schedule_id FROM matches LIMIT 1").fetchone()
+    if not row:
+        print("No matches in DB — run match_list.py first.")
+        sys.exit(1)
+    match_id = str(row[0])
     print(f"Fetching match detail for {match_id} ...")
     html = fetch_html(match_id)
     record = parse_detail(html)
