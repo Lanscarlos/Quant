@@ -1,7 +1,7 @@
 from nicegui import ui
 from src.ui.frame import navigation_bar
 from src.ui.panel import home, info
-from src.ui.page import dashboard
+from src.ui.page import dashboard, match_list
 from src.ui.router import Router
 
 PORT = 19193
@@ -19,6 +19,7 @@ def render():
     router.add('home', home.render)
     router.add('info', info.render)
     router.add('dashboard', dashboard.render)
+    router.add('match_list', match_list.render)
     router.add('settings', lambda: ui.label('⚙️ 设置页').classes('text-2xl'))
 
     with ui.row().classes('w-full h-screen gap-0'):

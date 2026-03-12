@@ -2,8 +2,9 @@ from nicegui import ui
 from src.ui.router import Router
 
 NAV_ITEMS = [
-    ('home', 'home', '首页'),
-    ('info', 'info', '关于'),
+    ('home',       'home',          '首页'),
+    ('match_list', 'sports_soccer', '赛事列表'),
+    ('info',       'info',          '关于'),
 ]
 
 BOTTOM_ITEMS = [
