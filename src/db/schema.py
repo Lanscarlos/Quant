@@ -51,7 +51,7 @@ _DDL = [
         away_red_cards    INTEGER DEFAULT 0,
         home_yellow_cards INTEGER DEFAULT 0,
         away_yellow_cards INTEGER DEFAULT 0,
-        fetched_at        TEXT    NOT NULL DEFAULT (datetime('now'))
+        fetched_at        TEXT    NOT NULL DEFAULT (datetime('now', '+8 hours'))
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_matches_time      ON matches(match_time)",
@@ -80,7 +80,7 @@ _DDL = [
         points        INTEGER,
         rank          INTEGER,
         win_rate      REAL,
-        fetched_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+        fetched_at    TEXT    NOT NULL DEFAULT (datetime('now', '+8 hours')),
         UNIQUE(schedule_id, side, period, scope)
     )
     """,
@@ -128,7 +128,7 @@ _DDL = [
         change_time       TEXT,
         flag1             INTEGER,
         flag2             INTEGER,
-        fetched_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+        fetched_at        TEXT    NOT NULL DEFAULT (datetime('now', '+8 hours')),
         UNIQUE(schedule_id, company_id)
     )
     """,
