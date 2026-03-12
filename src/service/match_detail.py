@@ -30,7 +30,7 @@ _STAT_COLS = ["played", "W", "D", "L", "GF", "GA", "GD", "pts", "rank", "win_rat
 _ROW_LABELS = ["total", "home", "away", "last6"]
 
 
-def fetch_html(match_id: str | int) -> str:
+def _fetch_html(match_id: str | int) -> str:
     url = f"https://zq.titan007.com/analysis/{match_id}sb.htm"
     resp = requests.get(url, headers=_HEADERS, timeout=15)
     resp.raise_for_status()
@@ -78,7 +78,7 @@ def _parse_stats_table(table) -> dict:
     return result
 
 
-def parse_detail(html: str) -> dict:
+def _parse_detail(html: str) -> dict:
     record: dict = {}
 
     # Basic match info from inline JS
@@ -119,7 +119,7 @@ def parse_detail(html: str) -> dict:
     return record
 
 
-def save_to_db(conn, record: dict) -> int:
+def _save_to_db(conn, record: dict) -> int:
     """Persist standings from a single match detail record to SQLite.
 
     Returns the number of rows written (16 rows per match: 2 sides × 2 periods × 4 scopes).
@@ -128,7 +128,7 @@ def save_to_db(conn, record: dict) -> int:
     return upsert_standings(conn, record)
 
 
-def export_csv(data: list[dict], out_path: Path) -> None:
+def _export_csv(data: list[dict], out_path: Path) -> None:
     """Write records to a UTF-8 CSV (with BOM for Excel compatibility)."""
     if not data:
         return
@@ -140,6 +140,18 @@ def export_csv(data: list[dict], out_path: Path) -> None:
         writer.writerows(data)
 
 
+def fetch_match_detail(match_id: str | int) -> int:
+    """Fetch, parse, and persist standings for a single match to SQLite.
+
+    Returns the number of rows written.
+    """
+    from src.db import get_conn
+
+    conn = get_conn()
+    record = _parse_detail(_fetch_html(match_id))
+    return _save_to_db(conn, record)
+
+
 if __name__ == "__main__":
     import io, sys
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -147,17 +159,17 @@ if __name__ == "__main__":
     import sys as _sys
     _sys.path.insert(0, str(Path(__file__).parent.parent.parent))
     from src.db import get_conn, init_db
-    conn = get_conn()
     init_db()
 
+    conn = get_conn()
     row = conn.execute("SELECT schedule_id FROM matches LIMIT 1").fetchone()
     if not row:
         print("No matches in DB — run match_list.py first.")
         sys.exit(1)
     match_id = str(row[0])
     print(f"Fetching match detail for {match_id} ...")
-    html = fetch_html(match_id)
-    record = parse_detail(html)
+    html = _fetch_html(match_id)
+    record = _parse_detail(html)
 
     print(f"schedule_id : {record.get('schedule_id')}")
     print(f"home_team   : {record.get('home_team')}  (id={record.get('home_team_id')})")
@@ -166,9 +178,9 @@ if __name__ == "__main__":
     print(f"home FT total rank : {record.get('home_ft_total_rank')}")
     print(f"away FT total rank : {record.get('away_ft_total_rank')}")
 
-    count = save_to_db(conn, record)
+    count = _save_to_db(conn, record)
     print(f"DB written : {count} rows")
 
     out = Path(__file__).parent.parent.parent / "docs" / "match_detail.csv"
-    export_csv([record], out)
+    _export_csv([record], out)
     print(f"CSV saved  -> {out}")

@@ -33,7 +33,7 @@ _COLOR_DIR = {
 }
 
 
-def fetch_html(rid: str | int, mid: str | int, cid: str | int) -> str:
+def _fetch_html(rid: str | int, mid: str | int, cid: str | int) -> str:
     url = (
         f"https://1x2.titan007.com/OddsHistory.aspx"
         f"?id={rid}&sid={mid}&cid={cid}&l=0"
@@ -56,7 +56,7 @@ def _cell_dir(td) -> str:
     return "unchanged"
 
 
-def parse_history(html: str) -> list[dict]:
+def _parse_history(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
     odds_span = soup.find(id="odds")
     if not odds_span:
@@ -99,17 +99,17 @@ def parse_history(html: str) -> list[dict]:
     return result
 
 
-def fetch_odds_history(
+def _fetch_and_parse(
     rid: str | int,
     mid: str | int,
     cid: str | int,
 ) -> list[dict]:
     """Fetch and parse odds change history for a given company + match."""
-    html = fetch_html(rid, mid, cid)
-    return parse_history(html)
+    html = _fetch_html(rid, mid, cid)
+    return _parse_history(html)
 
 
-def save_to_db(
+def _save_to_db(
     conn,
     record_id: int,
     schedule_id: int,
@@ -123,7 +123,7 @@ def save_to_db(
         record_id:   match_odds.record_id — FK to parent odds row.
         schedule_id: match schedule_id for fast per-match queries.
         company_id:  company_id for fast per-company filters.
-        records:     raw output of fetch_odds_history().
+        records:     raw output of _fetch_and_parse().
         match_year:  year of the match, used to complete "MM-DD HH:MM" timestamps.
     Returns the number of rows written.
     """
@@ -131,7 +131,7 @@ def save_to_db(
     return upsert_odds_history(conn, record_id, schedule_id, company_id, records, match_year)
 
 
-def export_csv(data: list[dict], out_path: Path) -> None:
+def _export_csv(data: list[dict], out_path: Path) -> None:
     """Write records to a UTF-8 CSV file (with BOM for Excel compatibility)."""
     if not data:
         return
@@ -142,6 +142,28 @@ def export_csv(data: list[dict], out_path: Path) -> None:
         writer.writerows(data)
 
 
+def fetch_odds_history(
+    rid: str | int,
+    mid: str | int,
+    cid: str | int,
+    match_year: int,
+) -> int:
+    """Fetch, parse, and persist odds change history for a given company + match.
+
+    Args:
+        rid:        record_id — the odds record ID from match_odds table.
+        mid:        match schedule_id.
+        cid:        company_id.
+        match_year: year of the match, used to complete "MM-DD HH:MM" timestamps.
+    Returns the number of rows written.
+    """
+    from src.db import get_conn
+
+    conn = get_conn()
+    records = _fetch_and_parse(rid, mid, cid)
+    return _save_to_db(conn, int(rid), int(mid), int(cid), records, match_year)
+
+
 if __name__ == "__main__":
     import io, sys, datetime
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -149,7 +171,6 @@ if __name__ == "__main__":
     import sys as _sys
     _sys.path.insert(0, str(Path(__file__).parent.parent.parent))
     from src.db import get_conn, init_db
-    conn = get_conn()
     init_db()
 
     target_cid = "115"
@@ -157,7 +178,7 @@ if __name__ == "__main__":
     target_mid = "2921107"
 
     print(f"Fetching odds history: match={target_mid} company={target_cid} record={target_rid} ...")
-    records = fetch_odds_history(target_rid, target_mid, target_cid)
+    records = _fetch_and_parse(target_rid, target_mid, target_cid)
     print(f"Total changes : {len(records)}")
 
     if records:
@@ -167,7 +188,8 @@ if __name__ == "__main__":
             print(f"Opening W/D/L : {opening['win']} / {opening['draw']} / {opening['lose']}")
         print(f"Latest  W/D/L : {latest['win']} / {latest['draw']} / {latest['lose']}  @ {latest['change_time']}")
 
-    count = save_to_db(
+    conn = get_conn()
+    count = _save_to_db(
         conn,
         record_id=int(target_rid),
         schedule_id=int(target_mid),
@@ -178,5 +200,5 @@ if __name__ == "__main__":
     print(f"DB written : {count} rows")
 
     out = Path(__file__).parent.parent.parent / "docs" / "match_odds_history.csv"
-    export_csv(records, out)
+    _export_csv(records, out)
     print(f"CSV saved  -> {out}")

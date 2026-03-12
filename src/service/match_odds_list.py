@@ -59,7 +59,7 @@ _FIELDS = {
 }
 
 
-def fetch_js(mid: str | int, save_dir: Path | None = None) -> str:
+def _fetch_js(mid: str | int, save_dir: Path | None = None) -> str:
     url = f"https://1x2d.titan007.com/{mid}.js"
     resp = requests.get(url, headers=_HEADERS, timeout=15)
     resp.raise_for_status()
@@ -77,7 +77,7 @@ def _safe(row: list[str], i: int) -> str:
         return ""
 
 
-def parse_odds(js: str) -> list[dict]:
+def _parse_odds(js: str) -> list[dict]:
     """Parse the `game` array from the odds JS file.
 
     Each element is a pipe-delimited string quoted inside Array(...).
@@ -108,13 +108,13 @@ def parse_odds(js: str) -> list[dict]:
     return result
 
 
-def fetch_match_odds(mid: str | int, save_dir: Path | None = None) -> list[dict]:
+def _fetch_and_parse(mid: str | int, save_dir: Path | None = None) -> list[dict]:
     """Fetch and parse European odds for a given match ID."""
-    js = fetch_js(mid, save_dir=save_dir)
-    return parse_odds(js)
+    js = _fetch_js(mid, save_dir=save_dir)
+    return _parse_odds(js)
 
 
-def save_to_db(conn, schedule_id: int, records: list[dict]) -> dict:
+def _save_to_db(conn, schedule_id: int, records: list[dict]) -> dict:
     """Persist odds for a single match to SQLite.
 
     Writes in dependency order: companies → odds.
@@ -129,7 +129,7 @@ def save_to_db(conn, schedule_id: int, records: list[dict]) -> dict:
     }
 
 
-def export_csv(data: list[dict], out_path: Path) -> None:
+def _export_csv(data: list[dict], out_path: Path) -> None:
     """Write records to a UTF-8 CSV file (with BOM for Excel compatibility)."""
     if not data:
         return
@@ -140,6 +140,18 @@ def export_csv(data: list[dict], out_path: Path) -> None:
         writer.writerows(data)
 
 
+def fetch_match_odds_list(schedule_id: str | int) -> dict:
+    """Fetch, parse, and persist European odds for a given match to SQLite.
+
+    Returns a dict with inserted/replaced counts per table.
+    """
+    from src.db import get_conn
+
+    conn = get_conn()
+    records = _fetch_and_parse(schedule_id)
+    return _save_to_db(conn, int(schedule_id), records)
+
+
 if __name__ == "__main__":
     import io, sys
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -147,13 +159,12 @@ if __name__ == "__main__":
     import sys as _sys
     _sys.path.insert(0, str(Path(__file__).parent.parent.parent))
     from src.db import get_conn, init_db
-    conn = get_conn()
     init_db()
 
     target_id = "2921107"
     docs_dir = Path(__file__).parent.parent.parent / "docs"
     print(f"Fetching odds for match {target_id} ...")
-    records = fetch_match_odds(target_id, save_dir=docs_dir)
+    records = _fetch_and_parse(target_id, save_dir=docs_dir)
     print(f"Total companies : {len(records)}")
 
     if records:
@@ -163,9 +174,10 @@ if __name__ == "__main__":
         print(f"cur   W/D/L     : {first.get('cur_win')} / {first.get('cur_draw')} / {first.get('cur_lose')}")
         print(f"kelly W/D/L     : {first.get('kelly_win')} / {first.get('kelly_draw')} / {first.get('kelly_lose')}")
 
-    counts = save_to_db(conn, int(target_id), records)
+    conn = get_conn()
+    counts = _save_to_db(conn, int(target_id), records)
     print(f"DB written : {counts}")
 
     out = Path(__file__).parent.parent.parent / "docs" / "match_odds_list.csv"
-    export_csv(records, out)
+    _export_csv(records, out)
     print(f"CSV saved  -> {out}")

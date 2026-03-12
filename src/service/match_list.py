@@ -70,7 +70,7 @@ def _fetch_js(url: str) -> str:
 
 def _parse_a_array(js: str) -> list[list[str]]:
     rows = []
-    for m in re.finditer(r'A\[\d+\]="([^"]+)"\.split\(', js):
+    for m in re.finditer(r'A\[\d+]="([^"]+)"\.split\(', js):
         rows.append(m.group(1).split("^"))
     return rows
 
@@ -82,7 +82,7 @@ def _safe(row: list[str], i: int) -> str:
         return ""
 
 
-def fetch_match_list(url: str = _DATA_URL) -> tuple[str, list[dict]]:
+def _fetch_and_parse(url: str = _DATA_URL) -> tuple[str, list[dict]]:
     """Fetch and parse match list from bfdata.js.
 
     Returns (matchdate, records) where records is a list of dicts.
@@ -102,7 +102,7 @@ def fetch_match_list(url: str = _DATA_URL) -> tuple[str, list[dict]]:
     return date_str, result
 
 
-def save_to_db(conn, records: list[dict]) -> dict:
+def _save_to_db(conn, records: list[dict]) -> dict:
     """Persist match list records to SQLite.
 
     Writes in dependency order: leagues → teams → matches.
@@ -119,7 +119,7 @@ def save_to_db(conn, records: list[dict]) -> dict:
     }
 
 
-def export_csv(data: list[dict], out_path: Path) -> None:
+def _export_csv(data: list[dict], out_path: Path) -> None:
     """Write records to a UTF-8 CSV file (with BOM for Excel compatibility)."""
     if not data:
         return
@@ -130,6 +130,18 @@ def export_csv(data: list[dict], out_path: Path) -> None:
         writer.writerows(data)
 
 
+def fetch_match_list() -> dict:
+    """Fetch, parse, and persist match list to SQLite.
+
+    Returns a dict with inserted/replaced counts per table.
+    """
+    from src.db import get_conn
+
+    conn = get_conn()
+    _, records = _fetch_and_parse()
+    return _save_to_db(conn, records)
+
+
 if __name__ == "__main__":
     import sys, io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -138,17 +150,17 @@ if __name__ == "__main__":
     import sys as _sys
     _sys.path.insert(0, str(Path(__file__).parent.parent.parent))
     from src.db import get_conn, init_db
-    conn = get_conn()
     init_db()
 
     print(f"Fetching {_DATA_URL} ...")
-    date_str, records = fetch_match_list()
+    date_str, records = _fetch_and_parse()
     print(f"Match date : {date_str}")
     print(f"Total rows : {len(records)}")
 
-    counts = save_to_db(conn, records)
+    conn = get_conn()
+    counts = _save_to_db(conn, records)
     print(f"DB written : {counts}")
 
     out = Path(__file__).parent.parent.parent / "docs" / "match_list.csv"
-    export_csv(records, out)
+    _export_csv(records, out)
     print(f"CSV saved  -> {out}")
