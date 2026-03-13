@@ -25,4 +25,4 @@ def render():
         ui.separator().props('vertical')
         router.mount()
 
-    router.navigate('home')
+    router.navigate('match_list')
