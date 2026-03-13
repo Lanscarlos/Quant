@@ -16,10 +16,8 @@ def render():
     ui.query('.nicegui-content').classes('h-full p-0')
 
     router = Router()
-    router.add('home', home.render)
-    router.add('info', info.render)
-    router.add('dashboard', dashboard.render)
     router.add('match_list', match_list.render)
+    router.add('info', info.render)
     router.add('settings', lambda: ui.label('⚙️ 设置页').classes('text-2xl'))
 
     with ui.row().classes('w-full h-screen gap-0'):
