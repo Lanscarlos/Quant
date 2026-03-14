@@ -163,6 +163,48 @@ _DDL = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_odds_history_rid   ON odds_history(record_id)",
     "CREATE INDEX IF NOT EXISTS idx_odds_history_match ON odds_history(schedule_id)",
+
+    # ------------------------------------------------------------------
+    # 8. match_asian_odds — 亚让赔率快照
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS match_asian_odds (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        schedule_id    INTEGER NOT NULL REFERENCES matches(schedule_id) ON DELETE CASCADE,
+        company_id     INTEGER NOT NULL REFERENCES companies(company_id),
+        open_handicap  TEXT,
+        open_home      REAL,
+        open_away      REAL,
+        cur_handicap   TEXT,
+        cur_home       REAL,
+        cur_away       REAL,
+        fetched_at     TEXT    NOT NULL DEFAULT (datetime('now', '+8 hours')),
+        UNIQUE(schedule_id, company_id)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_asian_odds_match ON match_asian_odds(schedule_id)",
+
+    # ------------------------------------------------------------------
+    # 9. asian_odds_history — 亚让赔率历史变动
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS asian_odds_history (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        schedule_id  INTEGER NOT NULL,
+        company_id   INTEGER NOT NULL,
+        change_time  TEXT    NOT NULL,
+        score        TEXT,
+        home_odds    REAL,
+        handicap     TEXT,
+        away_odds    REAL,
+        is_opening   INTEGER NOT NULL DEFAULT 0,
+        home_dir     TEXT CHECK(home_dir IN ('up', 'down', 'unchanged')),
+        away_dir     TEXT CHECK(away_dir IN ('up', 'down', 'unchanged')),
+        UNIQUE(schedule_id, company_id, change_time)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_asian_history_match ON asian_odds_history(schedule_id)",
+    "CREATE INDEX IF NOT EXISTS idx_asian_history_co    ON asian_odds_history(schedule_id, company_id)",
 ]
 
 
