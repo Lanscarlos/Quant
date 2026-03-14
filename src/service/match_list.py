@@ -75,9 +75,12 @@ def _parse_a_array(js: str) -> list[list[str]]:
     return rows
 
 
+_HTML_TAG = re.compile(r"<[^>]+>")
+
+
 def _safe(row: list[str], i: int) -> str:
     try:
-        return row[i]
+        return _HTML_TAG.sub("", row[i]).strip()
     except IndexError:
         return ""
 
