@@ -81,7 +81,7 @@ def _query_matches(statuses: list[int] | None = None) -> list[dict]:
     return result
 
 
-def render():
+def render(on_match_click: callable = None):
     # 消除 ui.expansion 内容区域的默认内边距
     ui.add_css('.q-expansion-item__content { padding: 0 !important; }')
 
@@ -154,7 +154,7 @@ def render():
 
                 with ui.column().classes('w-full gap-0'):
                     for league in page_leagues:
-                        _render_league_expansion(league, groups[league])
+                        _render_league_expansion(league, groups[league], on_match_click)
 
             def _prev_page():
                 if current_page[0] > 0:
@@ -222,7 +222,7 @@ def render():
     ui.timer(60, _reload)
 
 
-def _render_league_expansion(league: str, matches: list[dict]):
+def _render_league_expansion(league: str, matches: list[dict], on_click=None):
     # header slot 使用 Vue 模板字符串，让 Quasar 的 expanded 变量控制图标方向
     header_slot = (
         f'<div style="display:flex;align-items:center;gap:8px;width:100%;'
@@ -245,19 +245,27 @@ def _render_league_expansion(league: str, matches: list[dict]):
     with exp:
         with ui.column().classes('w-full gap-0'):
             for i, m in enumerate(matches):
-                _render_match_row(m, odd=i % 2 == 1)
+                _render_match_row(m, odd=i % 2 == 1, on_click=on_click)
 
 
-def _render_match_row(m: dict, odd: bool):
+def _render_match_row(m: dict, odd: bool, on_click=None):
     is_live = m['is_live']
     row_bg  = '#f8fafc' if odd else '#ffffff'
+    cursor  = 'cursor:pointer;' if on_click else ''
 
-    with ui.row().classes('w-full items-center') \
-            .style(f'background:{row_bg};border-bottom:1px solid #f1f5f9;'
-                   f'border-left:3px solid {"#16a34a" if is_live else "transparent"};'
-                   f'padding:8px 12px 8px 10px') \
-            .on('mouseover', js_handler='(e) => e.currentTarget.style.background="#eff6ff"') \
-            .on('mouseout',  js_handler=f'(e) => e.currentTarget.style.background="{row_bg}"'):
+    row = (
+        ui.row().classes('w-full items-center')
+        .style(f'background:{row_bg};border-bottom:1px solid #f1f5f9;'
+               f'border-left:3px solid {"#16a34a" if is_live else "transparent"};'
+               f'padding:8px 12px 8px 10px;{cursor}')
+        .on('mouseover', js_handler='(e) => e.currentTarget.style.background="#eff6ff"')
+        .on('mouseout',  js_handler=f'(e) => e.currentTarget.style.background="{row_bg}"')
+    )
+    if on_click:
+        mid = m['id']
+        row.on('click', lambda m_id=mid: on_click(m_id))
+
+    with row:
 
         ui.label(m['match_time']) \
             .style('width:64px;font-size:12px;color:#94a3b8;flex-shrink:0')
