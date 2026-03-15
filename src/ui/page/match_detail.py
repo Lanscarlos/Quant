@@ -86,6 +86,8 @@ def _query_standings(mid: int) -> dict:
     return result
 
 
+_FEATURED_COMPANY_IDS = (115, 82)  # William Hill, Ladbrokes
+
 def _query_odds(mid: int) -> list[dict]:
     conn = get_conn()
     rows = conn.execute("""
@@ -95,7 +97,7 @@ def _query_odds(mid: int) -> list[dict]:
                o.kelly_win, o.kelly_draw, o.kelly_lose
         FROM match_odds o
         JOIN companies c ON o.company_id = c.company_id
-        WHERE o.schedule_id = ?
+        WHERE o.schedule_id = ? AND o.company_id IN (115, 82)
         ORDER BY c.company_name
     """, (mid,)).fetchall()
     return [{
