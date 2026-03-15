@@ -120,12 +120,15 @@ def _d(v) -> str: return str(v) if v is not None else '-'
 def _render_match_header(match: dict):
     is_live = match['status'] in (1, 3)
     with ui.card().classes('w-full').props('flat bordered'):
-        with ui.column().classes('w-full items-center gap-2 p-4'):
-            ui.label(match['league']).classes('text-xs text-slate-400')
-            with ui.row().classes('w-full items-center justify-center gap-4'):
-                with ui.column().classes('items-end gap-0.5 flex-1 min-w-0'):
+        with ui.column().classes('w-full items-center gap-2 p-4 bg-blue-50 rounded-lg'):
+            ui.label(match['league']).classes(
+                'text-xs font-medium text-blue-600 bg-white px-3 py-0.5 '
+                'rounded-full border border-blue-200'
+            )
+            with ui.row().classes('w-full items-center justify-center gap-4 mt-1'):
+                with ui.column().classes('items-end gap-1 flex-1 min-w-0'):
                     ui.label(match['home_team']) \
-                        .classes('text-xl font-bold text-slate-800 text-right truncate w-full')
+                        .classes('text-xl font-bold text-blue-700 text-right truncate w-full')
                     if match['home_rank']:
                         ui.label(f"第 {match['home_rank']} 名") \
                             .classes('text-xs text-slate-400')
@@ -135,13 +138,13 @@ def _render_match_header(match: dict):
                     ui.label(match['score']).classes(score_cls)
                     if match['half_score']:
                         ui.label(match['half_score']).classes('text-xs text-slate-400')
-                with ui.column().classes('items-start gap-0.5 flex-1 min-w-0'):
+                with ui.column().classes('items-start gap-1 flex-1 min-w-0'):
                     ui.label(match['away_team']) \
-                        .classes('text-xl font-bold text-slate-800 truncate w-full')
+                        .classes('text-xl font-bold text-red-600 truncate w-full')
                     if match['away_rank']:
                         ui.label(f"第 {match['away_rank']} 名") \
                             .classes('text-xs text-slate-400')
-            ui.label(match['match_time']).classes('text-xs text-slate-400')
+            ui.label(match['match_time']).classes('text-xs text-slate-400 mt-1')
 
 
 def _render_standings(standings: dict, match: dict):
@@ -156,12 +159,19 @@ def _render_standings(standings: dict, match: dict):
                     ui.label(_PERIOD_LABEL[period]) \
                         .classes('text-xs font-semibold text-blue-600')
                     with ui.row().classes('w-full gap-3 items-start'):
-                        for side, team_key in [('home', 'home_team'), ('away', 'away_team')]:
+                        for side, team_key, is_home in [
+                            ('home', 'home_team', True),
+                            ('away', 'away_team', False),
+                        ]:
                             period_data = standings.get(side, {}).get(period, {})
-                            _render_team_standings_table(match[team_key], period_data)
+                            _render_team_standings_table(match[team_key], period_data, is_home)
 
 
-def _render_team_standings_table(team_name: str, period_data: dict):
+def _render_team_standings_table(team_name: str, period_data: dict, is_home: bool = True):
+    color_cls  = 'text-blue-700' if is_home else 'text-red-600'
+    badge_color = 'blue' if is_home else 'red'
+    side_label  = '主' if is_home else '客'
+
     rows = []
     for scope in ('total', 'home', 'away', 'last6'):
         s = period_data.get(scope, {})
@@ -174,20 +184,34 @@ def _render_team_standings_table(team_name: str, period_data: dict):
             'wr':     s.get('win_rate', '-'),
         })
     cols = [
-        {'name': 'scope', 'label': team_name, 'field': 'scope',  'align': 'left'},
-        {'name': 'played','label': '赛',       'field': 'played', 'align': 'center'},
-        {'name': 'win',   'label': '胜',       'field': 'win',    'align': 'center'},
-        {'name': 'draw',  'label': '平',       'field': 'draw',   'align': 'center'},
-        {'name': 'loss',  'label': '负',       'field': 'loss',   'align': 'center'},
-        {'name': 'gf',    'label': '得',       'field': 'gf',     'align': 'center'},
-        {'name': 'ga',    'label': '失',       'field': 'ga',     'align': 'center'},
-        {'name': 'pts',   'label': '积分',     'field': 'pts',    'align': 'center'},
-        {'name': 'rank',  'label': '排名',     'field': 'rank',   'align': 'center'},
-        {'name': 'wr',    'label': '胜率',     'field': 'wr',     'align': 'center'},
+        {'name': 'scope', 'label': '范围', 'field': 'scope',  'align': 'left'},
+        {'name': 'played','label': '赛',   'field': 'played', 'align': 'center'},
+        {'name': 'win',   'label': '胜',   'field': 'win',    'align': 'center'},
+        {'name': 'draw',  'label': '平',   'field': 'draw',   'align': 'center'},
+        {'name': 'loss',  'label': '负',   'field': 'loss',   'align': 'center'},
+        {'name': 'gf',    'label': '得',   'field': 'gf',     'align': 'center'},
+        {'name': 'ga',    'label': '失',   'field': 'ga',     'align': 'center'},
+        {'name': 'pts',   'label': '积分', 'field': 'pts',    'align': 'center'},
+        {'name': 'rank',  'label': '排名', 'field': 'rank',   'align': 'center'},
+        {'name': 'wr',    'label': '胜率', 'field': 'wr',     'align': 'center'},
     ]
-    ui.table(columns=cols, rows=rows) \
-        .classes('flex-1 text-xs min-w-0') \
-        .props('dense flat bordered')
+
+    with ui.column().classes('flex-1 min-w-0 gap-1'):
+        with ui.row().classes('items-center gap-1'):
+            ui.badge(side_label, color=badge_color).classes('text-xs')
+            ui.label(team_name).classes(f'text-sm font-bold {color_cls} truncate')
+        ui.table(columns=cols, rows=rows) \
+            .classes('w-full text-xs min-w-0') \
+            .props('dense flat bordered')
+
+
+_ODDS_COLS = [
+    {'name': 'type',   'label': '',      'field': 'type',   'align': 'left'},
+    {'name': 'win',    'label': '胜',    'field': 'win',    'align': 'center'},
+    {'name': 'draw',   'label': '平',    'field': 'draw',   'align': 'center'},
+    {'name': 'lose',   'label': '负',    'field': 'lose',   'align': 'center'},
+    {'name': 'payout', 'label': '返还率', 'field': 'payout', 'align': 'center'},
+]
 
 
 def _render_odds(odds_rows: list[dict]):
@@ -196,23 +220,33 @@ def _render_odds(odds_rows: list[dict]):
         if not odds_rows:
             _no_data_hint()
             return
-        cols = [
-            {'name': 'company',     'label': '公司',    'field': 'company',     'align': 'left'},
-            {'name': 'open_win',    'label': '初-胜',   'field': 'open_win',    'align': 'center'},
-            {'name': 'open_draw',   'label': '初-平',   'field': 'open_draw',   'align': 'center'},
-            {'name': 'open_lose',   'label': '初-负',   'field': 'open_lose',   'align': 'center'},
-            {'name': 'open_payout', 'label': '返还率',  'field': 'open_payout', 'align': 'center'},
-            {'name': 'cur_win',     'label': '即-胜',   'field': 'cur_win',     'align': 'center'},
-            {'name': 'cur_draw',    'label': '即-平',   'field': 'cur_draw',    'align': 'center'},
-            {'name': 'cur_lose',    'label': '即-负',   'field': 'cur_lose',    'align': 'center'},
-            {'name': 'cur_payout',  'label': '返还率',  'field': 'cur_payout',  'align': 'center'},
-            {'name': 'kelly_win',   'label': '凯-胜',   'field': 'kelly_win',   'align': 'center'},
-            {'name': 'kelly_draw',  'label': '凯-平',   'field': 'kelly_draw',  'align': 'center'},
-            {'name': 'kelly_lose',  'label': '凯-负',   'field': 'kelly_lose',  'align': 'center'},
-        ]
-        ui.table(columns=cols, rows=odds_rows) \
-            .classes('w-full text-xs') \
-            .props('dense flat bordered')
+
+        company_map = {r['company']: r for r in odds_rows}
+
+        with ui.row().classes('w-full gap-4'):
+            for company_name, label, color in [
+                ('William Hill', '威廉希尔', 'blue'),
+                ('Ladbrokes',    '立博',     'red'),
+            ]:
+                row = company_map.get(company_name)
+                with ui.column().classes('flex-1 gap-1'):
+                    with ui.row().classes('items-center gap-2'):
+                        ui.badge(label, color=color).classes('text-xs')
+                        ui.label(company_name).classes('text-xs text-slate-500')
+                    if row:
+                        table_rows = [
+                            {'type': '初盘', 'win': row['open_win'],  'draw': row['open_draw'],
+                             'lose': row['open_lose'],  'payout': row['open_payout']},
+                            {'type': '即时', 'win': row['cur_win'],   'draw': row['cur_draw'],
+                             'lose': row['cur_lose'],   'payout': row['cur_payout']},
+                            {'type': '凯利', 'win': row['kelly_win'], 'draw': row['kelly_draw'],
+                             'lose': row['kelly_lose'], 'payout': '-'},
+                        ]
+                        ui.table(columns=_ODDS_COLS, rows=table_rows) \
+                            .classes('w-full text-xs') \
+                            .props('dense flat bordered')
+                    else:
+                        _no_data_hint()
 
 
 def _no_data_hint():
@@ -266,7 +300,9 @@ def render(on_back: callable = None):
 
                 with ui.column().classes('w-full gap-4 p-4'):
                     _render_match_header(match)
+                    ui.separator().classes('my-1')
                     _render_standings(standings, match)
+                    ui.separator().classes('my-1')
                     _render_odds(odds_rows)
 
                 # Auto-fetch if data is stale
