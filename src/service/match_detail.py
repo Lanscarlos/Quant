@@ -8,7 +8,34 @@ Extracts from each match detail page:
   - Basic match info (from inline JS vars)
   - League standings for both teams: full-time & half-time,
     split by total / home / away / last-6 (from #porlet_5 tables)
+  - Recent 6 matches for both teams (from h_data / a_data JS arrays)
+
+JS array field index mapping (h_data / a_data):
+  [0]  date         YY-MM-DD
+  [1]  league_id    int
+  [2]  league_name  str
+  [3]  color        hex color string
+  [4]  home_id      int
+  [5]  home_html    HTML with team name and rank
+  [6]  away_id      int
+  [7]  away_html    HTML with team name and rank
+  [8]  home_ft      int  full-time home goals
+  [9]  away_ft      int  full-time away goals
+  [10] ht_score     str  half-time score "H-A"
+  [11] handicap     str  Asian handicap value
+  [12] result       int  1=focus-team won, 0=draw, -1=focus-team lost
+                        (already flipped by the site to focus-team perspective)
+  [13] hc_result    int  -2=no data, -1=loss, 0=push, 1=win (handicap)
+  [14] extra        int  (reserved, typically unused -2)
+  [15] match_id     int
+  [16] home_rank    str
+  [17] away_rank    str
+  [18] league_url   str
+  [19] extra_time   int  (0=normal, 1=extra/penalty)
+  [20] home_corners str  (present in newer data)
+  [21] away_corners str  (present in newer data)
 """
+import ast
 import csv
 import re
 from pathlib import Path
@@ -49,6 +76,79 @@ def _js_str(html: str, var: str) -> str:
 def _js_int(html: str, var: str) -> str:
     m = re.search(rf"var {var}\s*=\s*(-?\d+)", html)
     return m.group(1) if m else ""
+
+
+# --- Recent matches parser (h_data / a_data JS arrays) ---
+
+def _strip_team_html(html_str: str) -> str:
+    """Strip HTML tags from team name span, returning plain text.
+
+    Removes <span class=hp> elements (handicap markers) before extracting text.
+    """
+    soup = BeautifulSoup(str(html_str), "html.parser")
+    for hp in soup.find_all("span", class_="hp"):
+        hp.decompose()
+    return soup.get_text(strip=True)
+
+
+def _parse_recent_matches(html: str, data_var: str, limit: int = 6) -> list[dict]:
+    """
+    Parse recent match history from h_data or a_data inline JS arrays.
+
+    Returns a list of up to *limit* most-recent matches (entries are already
+    in reverse-chronological order in the source).
+
+    Each dict contains:
+      date       str   YY-MM-DD
+      league     str   league name
+      home_id    int   home team ID
+      home_name  str   home team name (HTML stripped)
+      away_id    int   away team ID
+      away_name  str   away team name (HTML stripped)
+      home_ft    int   full-time home goals
+      away_ft    int   full-time away goals
+      ft_score   str   "H-A" full-time score
+      ht_score   str   "H-A" half-time score
+      handicap   str   Asian handicap value
+      result     int   1=focus-team won, 0=draw, -1=focus-team lost
+      hc_result  int   handicap result (-2=no data, -1=loss, 0=push, 1=win)
+      match_id   int
+    """
+    m = re.search(rf"var {data_var}\s*=\s*(\[.*?\]);", html, re.DOTALL)
+    if not m:
+        return []
+
+    try:
+        entries = ast.literal_eval(m.group(1))
+    except (ValueError, SyntaxError):
+        return []
+
+    results = []
+    for entry in entries:
+        if len(entry) < 16:
+            continue
+        home_ft = int(entry[8]) if entry[8] != "" else 0
+        away_ft = int(entry[9]) if entry[9] != "" else 0
+        results.append({
+            "date":      entry[0],
+            "league":    entry[2],
+            "home_id":   int(entry[4]),
+            "home_name": _strip_team_html(entry[5]),
+            "away_id":   int(entry[6]),
+            "away_name": _strip_team_html(entry[7]),
+            "home_ft":   home_ft,
+            "away_ft":   away_ft,
+            "ft_score":  f"{home_ft}-{away_ft}",
+            "ht_score":  entry[10],
+            "handicap":  entry[11],
+            "result":    int(entry[12]),   # 1=focus won, 0=draw, -1=focus lost
+            "hc_result": int(entry[13]),   # -2=no data, -1=loss, 0=push, 1=win
+            "match_id":  int(entry[15]),
+        })
+        if len(results) >= limit:
+            break
+
+    return results
 
 
 # --- HTML table parser ---
@@ -115,6 +215,10 @@ def _parse_detail(html: str) -> dict:
             stats = _parse_stats_table(inner_table)
             for k, v in stats.items():
                 record[f"{side}_{period}_{k}"] = v
+
+    # Recent 6 matches for each team from h_data / a_data JS arrays
+    record["home_recent"] = _parse_recent_matches(html, "h_data")
+    record["away_recent"] = _parse_recent_matches(html, "a_data")
 
     return record
 
