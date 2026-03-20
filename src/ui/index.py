@@ -7,7 +7,7 @@ from src.ui.router import Router
 PORT = 19193
 NAME = "Quant"
 ICON = "assets/icon.ico"
-SIZE = (1080, 720)
+SIZE = (1260, 840)
 
 
 @ui.page('/')
