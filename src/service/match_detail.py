@@ -224,12 +224,13 @@ def _parse_detail(html: str) -> dict:
 
 
 def _save_to_db(conn, record: dict) -> int:
-    """Persist standings from a single match detail record to SQLite.
+    """Persist standings and recent matches from a single match detail record to SQLite.
 
-    Returns the number of rows written (16 rows per match: 2 sides × 2 periods × 4 scopes).
+    Returns the number of rows written.
     """
     from src.db.repo.standings import upsert_standings
-    return upsert_standings(conn, record)
+    from src.db.repo.recent_matches import upsert_recent_matches
+    return upsert_standings(conn, record) + upsert_recent_matches(conn, record)
 
 
 def _export_csv(data: list[dict], out_path: Path) -> None:

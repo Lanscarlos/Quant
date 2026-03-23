@@ -87,7 +87,34 @@ _DDL = [
     "CREATE INDEX IF NOT EXISTS idx_standings_match ON match_standings(schedule_id)",
 
     # ------------------------------------------------------------------
-    # 5. companies — 博彩公司字典
+    # 5. match_recent — 近6场比赛历史
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS match_recent (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        schedule_id  INTEGER NOT NULL REFERENCES matches(schedule_id) ON DELETE CASCADE,
+        side         TEXT    NOT NULL CHECK(side IN ('home', 'away')),
+        match_id     INTEGER NOT NULL,
+        date         TEXT,
+        league       TEXT,
+        home_id      INTEGER,
+        home_name    TEXT,
+        away_id      INTEGER,
+        away_name    TEXT,
+        home_ft      INTEGER,
+        away_ft      INTEGER,
+        ht_score     TEXT,
+        handicap     TEXT,
+        result       INTEGER,
+        hc_result    INTEGER,
+        fetched_at   TEXT    NOT NULL DEFAULT (datetime('now', '+8 hours')),
+        UNIQUE(schedule_id, side, match_id)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_recent_match ON match_recent(schedule_id)",
+
+    # ------------------------------------------------------------------
+    # 6. companies — 博彩公司字典
     # ------------------------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS companies (
@@ -98,7 +125,7 @@ _DDL = [
     """,
 
     # ------------------------------------------------------------------
-    # 6. match_odds — 欧赔快照
+    # 7. match_odds — 欧赔快照
     # ------------------------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS match_odds (
@@ -135,7 +162,7 @@ _DDL = [
     "CREATE INDEX IF NOT EXISTS idx_odds_match ON match_odds(schedule_id)",
 
     # ------------------------------------------------------------------
-    # 7. odds_history — 赔率历史变动
+    # 8. odds_history — 赔率历史变动
     # ------------------------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS odds_history (
@@ -165,7 +192,7 @@ _DDL = [
     "CREATE INDEX IF NOT EXISTS idx_odds_history_match ON odds_history(schedule_id)",
 
     # ------------------------------------------------------------------
-    # 8. match_asian_odds — 亚让赔率快照
+    # 9. match_asian_odds — 亚让赔率快照
     # ------------------------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS match_asian_odds (
@@ -185,7 +212,7 @@ _DDL = [
     "CREATE INDEX IF NOT EXISTS idx_asian_odds_match ON match_asian_odds(schedule_id)",
 
     # ------------------------------------------------------------------
-    # 9. asian_odds_history — 亚让赔率历史变动
+    # 10. asian_odds_history — 亚让赔率历史变动
     # ------------------------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS asian_odds_history (
