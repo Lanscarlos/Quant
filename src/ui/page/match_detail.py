@@ -16,7 +16,6 @@ from src.sync.coordinator import should_fetch_detail, should_fetch_odds
 _state: dict = {'match_id': None}
 _refresh_fn: list = [None]
 
-_PERIOD_LABEL = {'ft': '全场', 'ht': '半场'}
 _SCOPE_LABEL  = {'total': '总', 'home': '主', 'away': '客', 'last6': '近6'}
 
 
@@ -153,18 +152,15 @@ def _render_standings(standings: dict, match: dict):
         if not standings:
             _no_data_hint()
             return
-        for period in ('ft', 'ht'):
-            with ui.card().classes('w-full').props('flat bordered'):
-                with ui.column().classes('w-full gap-2 p-3'):
-                    ui.label(_PERIOD_LABEL[period]) \
-                        .classes('text-xs font-semibold text-blue-600')
-                    with ui.row().classes('w-full gap-3 items-start'):
-                        for side, team_key, is_home in [
-                            ('home', 'home_team', True),
-                            ('away', 'away_team', False),
-                        ]:
-                            period_data = standings.get(side, {}).get(period, {})
-                            _render_team_standings_table(match[team_key], period_data, is_home)
+        with ui.card().classes('w-full').props('flat bordered'):
+            with ui.column().classes('w-full gap-2 p-3'):
+                with ui.row().classes('w-full gap-3 items-start'):
+                    for side, team_key, is_home in [
+                        ('home', 'home_team', True),
+                        ('away', 'away_team', False),
+                    ]:
+                        period_data = standings.get(side, {}).get('ft', {})
+                        _render_team_standings_table(match[team_key], period_data, is_home)
 
 
 def _render_team_standings_table(team_name: str, period_data: dict, is_home: bool = True):
