@@ -309,6 +309,23 @@ def _render_odds(odds_rows: list[dict]):
                         _no_data_hint()
 
 
+def _fetch_recent_odds(mid: int) -> None:
+    """为 match_recent 里尚无赔率记录的历史场次补抓欧赔。"""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT DISTINCT match_id FROM match_recent WHERE schedule_id = ?", (mid,)
+    ).fetchall()
+    for (match_id,) in rows:
+        has = conn.execute(
+            "SELECT 1 FROM match_odds WHERE schedule_id = ? LIMIT 1", (match_id,)
+        ).fetchone()
+        if not has:
+            try:
+                fetch_match_odds_list(match_id)
+            except Exception:
+                pass  # 历史场次可能已下线（404），跳过不影响主流程
+
+
 def _no_data_hint():
     with ui.row().classes('w-full items-center gap-2 py-3 justify-center'):
         ui.icon('info_outline').classes('text-slate-300 text-lg')
@@ -386,6 +403,7 @@ def render(on_back: callable = None):
                             await run.io_bound(fetch_match_detail, mid)
                         if need_odds:
                             await run.io_bound(fetch_match_odds_list, mid)
+                        await run.io_bound(_fetch_recent_odds, mid)
                         detail_content.refresh()
                     except Exception:
                         pass
@@ -409,6 +427,7 @@ def render(on_back: callable = None):
         try:
             await run.io_bound(fetch_match_detail, mid)
             await run.io_bound(fetch_match_odds_list, mid)
+            await run.io_bound(_fetch_recent_odds, mid)
             detail_content.refresh()
         except Exception as exc:
             err_label.set_text(f'抓取失败：{exc}')
