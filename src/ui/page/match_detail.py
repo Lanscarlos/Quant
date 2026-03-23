@@ -230,7 +230,7 @@ _RECENT_COLS = [
     {'name': 'away',  'label': '客场',   'field': 'away_name', 'align': 'left'},
     {'name': 'score', 'label': '比分',   'field': 'score',     'align': 'center'},
     {'name': 'h30',   'label': '赛前半小时', 'field': 'h30_odds', 'align': 'center'},
-    {'name': 'cur',   'label': '最终(胜/平/负)',     'field': 'cur_odds', 'align': 'center'},
+    {'name': 'cur',   'label': '最终赔率',     'field': 'cur_odds', 'align': 'center'},
 ]
 
 

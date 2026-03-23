@@ -130,7 +130,7 @@ _DDL = [
     """
     CREATE TABLE IF NOT EXISTS match_odds (
         record_id         INTEGER PRIMARY KEY,
-        schedule_id       INTEGER NOT NULL REFERENCES matches(schedule_id) ON DELETE CASCADE,
+        schedule_id       INTEGER NOT NULL,
         company_id        INTEGER NOT NULL REFERENCES companies(company_id),
         open_win          REAL,
         open_draw         REAL,
@@ -167,7 +167,7 @@ _DDL = [
     """
     CREATE TABLE IF NOT EXISTS odds_history (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
-        record_id    INTEGER NOT NULL REFERENCES match_odds(record_id) ON DELETE CASCADE,
+        record_id    INTEGER NOT NULL,
         schedule_id  INTEGER NOT NULL,
         company_id   INTEGER NOT NULL,
         win          REAL,
