@@ -113,17 +113,15 @@ def _query_recent_matches(mid: int) -> dict:
 
 
 def _query_header_extras(mid: int) -> dict:
-    """Queries points (from standings), recent W/D/L counts, and William Hill odds."""
+    """Queries points (from standings) and recent W/D/L counts."""
     conn = get_conn()
 
-    # Points from total ft standings
     pts_rows = conn.execute("""
         SELECT side, points FROM match_standings
         WHERE schedule_id = ? AND period = 'ft' AND scope = 'total'
     """, (mid,)).fetchall()
     pts = {r[0]: r[1] for r in pts_rows}
 
-    # Recent 6-game W/D/L per side
     wdl_rows = conn.execute("""
         SELECT side,
                SUM(CASE WHEN result =  1 THEN 1 ELSE 0 END),
@@ -134,20 +132,11 @@ def _query_header_extras(mid: int) -> dict:
     """, (mid,)).fetchall()
     wdl = {r[0]: (int(r[1] or 0), int(r[2] or 0), int(r[3] or 0)) for r in wdl_rows}
 
-    # William Hill current odds
-    odds_row = conn.execute("""
-        SELECT cur_win, cur_draw, cur_lose FROM match_odds
-        WHERE schedule_id = ? AND company_id = 115
-    """, (mid,)).fetchone()
-
     return {
-        'home_pts':  pts.get('home'),
-        'away_pts':  pts.get('away'),
-        'home_wdl':  wdl.get('home'),   # (w, d, l) or None
-        'away_wdl':  wdl.get('away'),
-        'wh_win':    odds_row[0] if odds_row else None,
-        'wh_draw':   odds_row[1] if odds_row else None,
-        'wh_lose':   odds_row[2] if odds_row else None,
+        'home_pts': pts.get('home'),
+        'away_pts': pts.get('away'),
+        'home_wdl': wdl.get('home'),
+        'away_wdl': wdl.get('away'),
     }
 
 
@@ -182,21 +171,14 @@ def _d(v) -> str: return str(v) if v is not None else '-'
 
 # ── UI renderers ──────────────────────────────────────────────────────────────
 
-def _render_team_half(
-    team_name: str,
-    rank,
-    pts,
-    wdl: tuple | None,
-    wh_win, wh_draw, wh_lose,
-    is_home: bool,
-):
+def _render_team_half(team_name: str, rank, pts, wdl: tuple | None, is_home: bool):
     """Renders one team's half of the match header (home or away)."""
     badge_color = 'blue'  if is_home else 'red'
     side_label  = '主队'  if is_home else '客队'
     name_cls    = 'text-blue-700' if is_home else 'text-red-600'
 
     with ui.column().classes('flex-1 min-w-0 gap-1'):
-        # ── Row 1: badge + name + rank col + points col ────────────────
+        # Row 1: badge + name + rank col + points col
         with ui.row().classes('w-full items-center gap-2'):
             ui.badge(side_label, color=badge_color).classes('text-xs flex-shrink-0')
             ui.label(team_name).classes(
@@ -209,52 +191,23 @@ def _render_team_half(
                 ui.label('积分').classes('text-xs text-slate-400 leading-none')
                 ui.label(_d(pts)).classes('text-sm font-bold text-slate-700 leading-none')
 
-        # ── Row 2: recent 6 W/D/L + William Hill odds ──────────────────
-        with ui.row().classes('items-center gap-3 flex-wrap'):
-            if wdl:
-                w, d, l = wdl
-                ui.label(f"近6场: {w}胜{d}平{l}负").classes('text-xs text-slate-600')
-            if wh_win is not None:
-                ui.label(
-                    f"威廉希尔: {_f(wh_win)} / {_f(wh_draw)} / {_f(wh_lose)}"
-                ).classes('text-xs text-slate-400')
+        # Row 2: recent 6 W/D/L
+        if wdl:
+            w, d, l = wdl
+            ui.label(f"近6场: {w}胜{d}平{l}负").classes('text-xs text-slate-500')
 
 
 def _render_match_header(match: dict, extras: dict):
-    is_live = match['status'] in (1, 3)
-    score_cls = ('text-2xl font-bold text-green-600' if is_live
-                 else 'text-2xl font-bold text-slate-700')
-
     with ui.card().classes('w-full').props('flat bordered'):
-        with ui.column().classes('w-full gap-2 p-3'):
-            # ── Top bar: league + time ──────────────────────────────────
-            with ui.row().classes('w-full items-center justify-between'):
-                ui.label(match['league']).classes(
-                    'text-xs font-medium text-blue-600 bg-blue-50 px-3 py-0.5 '
-                    'rounded-full border border-blue-200'
-                )
-                ui.label(match['match_time']).classes('text-xs text-slate-400')
-
-            # ── Main: left | score | right ──────────────────────────────
-            with ui.row().classes('w-full items-start gap-2 mt-1'):
-                _render_team_half(
-                    match['home_team'], match['home_rank'], extras.get('home_pts'),
-                    extras.get('home_wdl'),
-                    extras.get('wh_win'), extras.get('wh_draw'), extras.get('wh_lose'),
-                    is_home=True,
-                )
-
-                with ui.column().classes('items-center flex-shrink-0 gap-0 pt-1'):
-                    ui.label(match['score']).classes(score_cls)
-                    if match['half_score']:
-                        ui.label(match['half_score']).classes('text-xs text-slate-400')
-
-                _render_team_half(
-                    match['away_team'], match['away_rank'], extras.get('away_pts'),
-                    extras.get('away_wdl'),
-                    extras.get('wh_win'), extras.get('wh_draw'), extras.get('wh_lose'),
-                    is_home=False,
-                )
+        with ui.row().classes('w-full gap-4 p-3 items-start'):
+            _render_team_half(
+                match['home_team'], match['home_rank'], extras.get('home_pts'),
+                extras.get('home_wdl'), is_home=True,
+            )
+            _render_team_half(
+                match['away_team'], match['away_rank'], extras.get('away_pts'),
+                extras.get('away_wdl'), is_home=False,
+            )
 
 
 _RECENT_COLS = [
@@ -360,8 +313,13 @@ def render(on_back: callable = None):
             if on_back:
                 back_btn.on_click(on_back)
             ui.icon('analytics').classes('text-xl text-blue-600')
-            title_label = ui.label('比赛详情') \
-                .classes('text-lg font-bold text-slate-700 flex-1 truncate')
+            title_label  = ui.label('比赛详情') \
+                .classes('text-base font-bold text-slate-700 truncate')
+            league_label = ui.label('') \
+                .classes('text-xs text-blue-600 bg-blue-50 px-2 py-0.5 '
+                         'rounded border border-blue-100 flex-shrink-0')
+            time_label   = ui.label('') \
+                .classes('text-xs text-slate-400 flex-shrink-0 flex-1')
             spinner   = ui.spinner(size='sm').classes('hidden')
             err_label = ui.label('').classes('text-xs text-red-500')
             fetch_btn = ui.button('抓取数据', icon='download') \
@@ -387,6 +345,8 @@ def render(on_back: callable = None):
                     return
 
                 title_label.set_text(f"{match['home_team']}  vs  {match['away_team']}")
+                league_label.set_text(match['league'])
+                time_label.set_text(match['match_time'])
                 extras    = _query_header_extras(mid)
                 recent    = _query_recent_matches(mid)
                 odds_rows = _query_odds(mid)
