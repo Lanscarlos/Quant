@@ -16,7 +16,7 @@ from src.sync.coordinator import should_fetch_detail, should_fetch_odds
 _state: dict = {'match_id': None}
 _refresh_fn: list = [None]
 
-_SCOPE_LABEL  = {'total': '总', 'home': '主', 'away': '客', 'last6': '近6'}
+_WH_COMPANY_ID = 115  # William Hill
 
 
 def load(match_id: int | str) -> None:
@@ -63,25 +63,52 @@ def _query_match(mid: int) -> dict | None:
     }
 
 
-def _query_standings(mid: int) -> dict:
-    """Returns nested dict: standings[side][period][scope] = {stat: value}"""
+def _query_recent_matches(mid: int) -> dict:
+    """Returns recent match history for home/away sides with William Hill odds.
+
+    Joins match_recent with:
+    - match_odds (company 115) for 最终赔率
+    - odds_history (company 115, last entry ≤ match_time−30min) for 赛前半小时赔率
+    """
     conn = get_conn()
     rows = conn.execute("""
-        SELECT side, period, scope,
-               played, win, draw, loss,
-               goals_for, goals_against, goal_diff,
-               points, rank, win_rate
-        FROM match_standings WHERE schedule_id = ?
-    """, (mid,)).fetchall()
-    result: dict = {}
+        SELECT
+            mr.side, mr.match_id,
+            mr.home_name, mr.away_name, mr.home_ft, mr.away_ft,
+            wo.cur_win, wo.cur_draw, wo.cur_lose,
+            h30.win,    h30.draw,    h30.lose
+        FROM match_recent mr
+        LEFT JOIN match_odds wo
+            ON wo.schedule_id = mr.match_id AND wo.company_id = ?
+        LEFT JOIN (
+            SELECT oh.schedule_id, oh.win, oh.draw, oh.lose,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY oh.schedule_id
+                       ORDER BY oh.change_time DESC
+                   ) AS rn
+            FROM odds_history oh
+            LEFT JOIN matches m ON oh.schedule_id = m.schedule_id
+            WHERE oh.company_id = ?
+              AND oh.is_opening = 0
+              AND (m.match_time IS NULL
+                   OR oh.change_time <= datetime(m.match_time, '-30 minutes'))
+        ) h30 ON h30.schedule_id = mr.match_id AND h30.rn = 1
+        WHERE mr.schedule_id = ?
+        ORDER BY mr.side, mr.id
+    """, (_WH_COMPANY_ID, _WH_COMPANY_ID, mid)).fetchall()
+
+    result: dict = {'home': [], 'away': []}
     for r in rows:
-        side, period, scope = r[0], r[1], r[2]
-        result.setdefault(side, {}).setdefault(period, {})[scope] = {
-            'played': r[3], 'win': r[4],  'draw': r[5], 'loss': r[6],
-            'gf':     r[7], 'ga':  r[8],  'gd':   r[9],
-            'points': r[10], 'rank': r[11],
-            'win_rate': f"{r[12] * 100:.0f}%" if r[12] is not None else '-',
-        }
+        side = r[0]
+        home_ft, away_ft = r[4], r[5]
+        score = f"{home_ft}:{away_ft}" if home_ft is not None else '-'
+        result[side].append({
+            'home_name': r[2] or '',
+            'away_name': r[3] or '',
+            'score':     score,
+            'h30_odds':  f"{_f(r[9])}/{_f(r[10])}/{_f(r[11])}",
+            'cur_odds':  f"{_f(r[6])}/{_f(r[7])}/{_f(r[8])}",
+        })
     return result
 
 
@@ -146,59 +173,44 @@ def _render_match_header(match: dict):
             ui.label(match['match_time']).classes('text-xs text-slate-400 mt-1')
 
 
-def _render_standings(standings: dict, match: dict):
+_RECENT_COLS = [
+    {'name': 'home',  'label': '主场',   'field': 'home_name', 'align': 'left'},
+    {'name': 'away',  'label': '客场',   'field': 'away_name', 'align': 'left'},
+    {'name': 'score', 'label': '比分',   'field': 'score',     'align': 'center'},
+    {'name': 'h30',   'label': '前30分钟(胜/平/负)', 'field': 'h30_odds', 'align': 'center'},
+    {'name': 'cur',   'label': '最终(胜/平/负)',     'field': 'cur_odds', 'align': 'center'},
+]
+
+
+def _render_recent_matches(recent: dict, match: dict):
     with ui.column().classes('w-full gap-2'):
         ui.label('联赛数据').classes('text-sm font-semibold text-slate-600 px-1')
-        if not standings:
+        has_data = any(recent.get(s) for s in ('home', 'away'))
+        if not has_data:
             _no_data_hint()
             return
         with ui.card().classes('w-full').props('flat bordered'):
-            with ui.column().classes('w-full gap-2 p-3'):
-                with ui.row().classes('w-full gap-3 items-start'):
-                    for side, team_key, is_home in [
-                        ('home', 'home_team', True),
-                        ('away', 'away_team', False),
-                    ]:
-                        period_data = standings.get(side, {}).get('ft', {})
-                        _render_team_standings_table(match[team_key], period_data, is_home)
-
-
-def _render_team_standings_table(team_name: str, period_data: dict, is_home: bool = True):
-    color_cls  = 'text-blue-700' if is_home else 'text-red-600'
-    badge_color = 'blue' if is_home else 'red'
-    side_label  = '主' if is_home else '客'
-
-    rows = []
-    for scope in ('total', 'home', 'away', 'last6'):
-        s = period_data.get(scope, {})
-        rows.append({
-            'scope':  _SCOPE_LABEL[scope],
-            'played': _d(s.get('played')), 'win':  _d(s.get('win')),
-            'draw':   _d(s.get('draw')),   'loss': _d(s.get('loss')),
-            'gf':     _d(s.get('gf')),     'ga':   _d(s.get('ga')),
-            'pts':    _d(s.get('points')), 'rank': _d(s.get('rank')),
-            'wr':     s.get('win_rate', '-'),
-        })
-    cols = [
-        {'name': 'scope', 'label': '范围', 'field': 'scope',  'align': 'left'},
-        {'name': 'played','label': '赛',   'field': 'played', 'align': 'center'},
-        {'name': 'win',   'label': '胜',   'field': 'win',    'align': 'center'},
-        {'name': 'draw',  'label': '平',   'field': 'draw',   'align': 'center'},
-        {'name': 'loss',  'label': '负',   'field': 'loss',   'align': 'center'},
-        {'name': 'gf',    'label': '得',   'field': 'gf',     'align': 'center'},
-        {'name': 'ga',    'label': '失',   'field': 'ga',     'align': 'center'},
-        {'name': 'pts',   'label': '积分', 'field': 'pts',    'align': 'center'},
-        {'name': 'rank',  'label': '排名', 'field': 'rank',   'align': 'center'},
-        {'name': 'wr',    'label': '胜率', 'field': 'wr',     'align': 'center'},
-    ]
-
-    with ui.column().classes('flex-1 min-w-0 gap-1'):
-        with ui.row().classes('items-center gap-1'):
-            ui.badge(side_label, color=badge_color).classes('text-xs')
-            ui.label(team_name).classes(f'text-sm font-bold {color_cls} truncate')
-        ui.table(columns=cols, rows=rows) \
-            .classes('w-full text-xs min-w-0') \
-            .props('dense flat bordered')
+            with ui.column().classes('w-full gap-3 p-3'):
+                for side, team_key, is_home in [
+                    ('home', 'home_team', True),
+                    ('away', 'away_team', False),
+                ]:
+                    rows = recent.get(side, [])
+                    color_cls   = 'text-blue-700' if is_home else 'text-red-600'
+                    badge_color = 'blue' if is_home else 'red'
+                    side_label  = '主' if is_home else '客'
+                    with ui.column().classes('w-full gap-1'):
+                        with ui.row().classes('items-center gap-1'):
+                            ui.badge(side_label, color=badge_color).classes('text-xs')
+                            ui.label(match[team_key]).classes(
+                                f'text-sm font-bold {color_cls} truncate')
+                            ui.label('近6场').classes('text-xs text-slate-400')
+                        if rows:
+                            ui.table(columns=_RECENT_COLS, rows=rows) \
+                                .classes('w-full text-xs') \
+                                .props('dense flat bordered')
+                        else:
+                            _no_data_hint()
 
 
 _ODDS_COLS = [
@@ -291,13 +303,13 @@ def render(on_back: callable = None):
                     return
 
                 title_label.set_text(f"{match['home_team']}  vs  {match['away_team']}")
-                standings = _query_standings(mid)
+                recent    = _query_recent_matches(mid)
                 odds_rows = _query_odds(mid)
 
                 with ui.column().classes('w-full gap-4 p-4'):
                     _render_match_header(match)
                     ui.separator().classes('my-1')
-                    _render_standings(standings, match)
+                    _render_recent_matches(recent, match)
                     ui.separator().classes('my-1')
                     _render_odds(odds_rows)
 
