@@ -171,50 +171,65 @@ def _d(v) -> str: return str(v) if v is not None else '-'
 
 # ── UI renderers ──────────────────────────────────────────────────────────────
 
+def _stat_chip(label: str, value):
+    with ui.column().classes(
+        'items-center gap-0 flex-shrink-0 '
+        'bg-slate-50 border border-slate-200 rounded-lg px-3 py-1'
+    ):
+        ui.label(label).classes('text-xs text-slate-400 leading-none')
+        ui.label(_d(value)).classes('text-sm font-bold text-slate-700 leading-none mt-0.5')
+
+
 def _render_team_half(team_name: str, rank, pts, wdl: tuple | None, is_home: bool):
     """Renders one team's half of the match header (home or away)."""
     badge_color = 'blue'  if is_home else 'red'
     side_label  = '主队'  if is_home else '客队'
     name_cls    = 'text-blue-700' if is_home else 'text-red-600'
 
-    with ui.column().classes('flex-1 min-w-0 gap-1'):
-        # Row 1: badge + name + rank col + points col
+    with ui.column().classes('flex-1 min-w-0 gap-2'):
+        # Row 1: badge + name
         with ui.row().classes('w-full items-center gap-2'):
             ui.badge(side_label, color=badge_color).classes('text-xs flex-shrink-0')
             ui.label(team_name).classes(
-                f'text-base font-bold {name_cls} flex-1 truncate min-w-0'
+                f'text-base font-bold {name_cls} truncate min-w-0'
             )
-            with ui.column().classes('items-center gap-0 flex-shrink-0'):
-                ui.label('排名').classes('text-xs text-slate-400 leading-none')
-                ui.label(_d(rank)).classes('text-sm font-bold text-slate-700 leading-none')
-            with ui.column().classes('items-center gap-0 flex-shrink-0'):
-                ui.label('积分').classes('text-xs text-slate-400 leading-none')
-                ui.label(_d(pts)).classes('text-sm font-bold text-slate-700 leading-none')
-
-        # Row 2: recent 6 W/D/L
-        if wdl:
-            w, d, l = wdl
-            ui.label(f"近6场: {w}胜{d}平{l}负").classes('text-xs text-slate-500')
+        # Row 2: stat chips + W/D/L
+        with ui.row().classes('items-center gap-2 flex-wrap'):
+            _stat_chip('排名', rank)
+            _stat_chip('积分', pts)
+            if wdl:
+                w, d, l = wdl
+                with ui.column().classes(
+                    'items-center gap-0 flex-shrink-0 '
+                    'bg-slate-50 border border-slate-200 rounded-lg px-3 py-1'
+                ):
+                    ui.label('近6场').classes('text-xs text-slate-400 leading-none')
+                    ui.label(f"{w}胜{d}平{l}负").classes(
+                        'text-sm font-bold text-slate-700 leading-none mt-0.5'
+                    )
 
 
 def _render_match_header(match: dict, extras: dict):
-    with ui.card().classes('w-full').props('flat bordered'):
-        with ui.row().classes('w-full gap-4 p-3 items-start'):
-            _render_team_half(
-                match['home_team'], match['home_rank'], extras.get('home_pts'),
-                extras.get('home_wdl'), is_home=True,
-            )
-            _render_team_half(
-                match['away_team'], match['away_rank'], extras.get('away_pts'),
-                extras.get('away_wdl'), is_home=False,
-            )
+    with ui.row().classes('w-full gap-3 items-start'):
+        with ui.card().classes('flex-1').props('flat bordered'):
+            with ui.column().classes('p-3'):
+                _render_team_half(
+                    match['home_team'], match['home_rank'], extras.get('home_pts'),
+                    extras.get('home_wdl'), is_home=True,
+                )
+        with ui.card().classes('flex-1').props('flat bordered'):
+            with ui.column().classes('p-3'):
+                _render_team_half(
+                    match['away_team'], match['away_rank'], extras.get('away_pts'),
+                    extras.get('away_wdl'), is_home=False,
+                )
 
 
 _RECENT_COLS = [
     {'name': 'home',  'label': '主场',   'field': 'home_name', 'align': 'left'},
     {'name': 'away',  'label': '客场',   'field': 'away_name', 'align': 'left'},
     {'name': 'score', 'label': '比分',   'field': 'score',     'align': 'center'},
-    {'name': 'h30',   'label': '前30分钟(胜/平/负)', 'field': 'h30_odds', 'align': 'center'},
+    {'name': 'h30',   'label': '赛前半小时', 'field': 'h30_odds', 'align': 'center'},
     {'name': 'cur',   'label': '最终(胜/平/负)',     'field': 'cur_odds', 'align': 'center'},
 ]
 
@@ -226,17 +241,17 @@ def _render_recent_matches(recent: dict, match: dict):
         if not has_data:
             _no_data_hint()
             return
-        with ui.card().classes('w-full').props('flat bordered'):
-            with ui.column().classes('w-full gap-3 p-3'):
-                for side, team_key, is_home in [
-                    ('home', 'home_team', True),
-                    ('away', 'away_team', False),
-                ]:
-                    rows = recent.get(side, [])
-                    color_cls   = 'text-blue-700' if is_home else 'text-red-600'
-                    badge_color = 'blue' if is_home else 'red'
-                    side_label  = '主' if is_home else '客'
-                    with ui.column().classes('w-full gap-1'):
+        with ui.row().classes('w-full gap-3 items-start'):
+            for side, team_key, is_home in [
+                ('home', 'home_team', True),
+                ('away', 'away_team', False),
+            ]:
+                rows = recent.get(side, [])
+                color_cls   = 'text-blue-700' if is_home else 'text-red-600'
+                badge_color = 'blue' if is_home else 'red'
+                side_label  = '主' if is_home else '客'
+                with ui.card().classes('flex-1').props('flat bordered'):
+                    with ui.column().classes('gap-1 p-3'):
                         with ui.row().classes('items-center gap-1'):
                             ui.badge(side_label, color=badge_color).classes('text-xs')
                             ui.label(match[team_key]).classes(
