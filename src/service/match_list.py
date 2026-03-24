@@ -7,6 +7,7 @@ Field mapping based on docs/data_schema.md and HTML/JS source analysis.
 """
 import csv
 import re
+from datetime import date
 from pathlib import Path
 
 import requests
@@ -93,13 +94,19 @@ def _fetch_and_parse(url: str = _DATA_URL) -> tuple[str, list[dict]]:
     js = _fetch_js(url)
 
     md = re.search(r'var matchdate="([^"]+)"', js)
-    date_str = md.group(1) if md else ""
+    raw_date = md.group(1) if md else ""
+    if len(raw_date) == 8:
+        date_prefix = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+    else:
+        date_prefix = date.today().strftime("%Y-%m-%d")
 
     indices = sorted(_FIELDS)
     result = []
     for row in _parse_a_array(js):
         record = {_FIELDS[i]: _safe(row, i) for i in indices}
         record["status_label"] = _STATUS_LABEL.get(record["status"], record["status"])
+        if date_prefix and record.get("match_time"):
+            record["match_time"] = f"{date_prefix} {record['match_time']}"
         result.append(record)
 
     return date_str, result
