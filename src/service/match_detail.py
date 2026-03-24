@@ -257,6 +257,18 @@ def fetch_match_detail(match_id: str | int) -> int:
     return _save_to_db(conn, record)
 
 
+def fetch_match_time(match_id: str | int) -> str | None:
+    """Fetch just the kick-off time for a match from the analysis page.
+
+    Returns a string like "2026-03-07 20:45", or None if unavailable.
+    """
+    try:
+        html = _fetch_html(match_id)
+        return _js_str(html, "strTime") or None
+    except Exception:
+        return None
+
+
 if __name__ == "__main__":
     import io, sys
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")

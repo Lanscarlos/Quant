@@ -96,6 +96,7 @@ _DDL = [
         side         TEXT    NOT NULL CHECK(side IN ('home', 'away')),
         match_id     INTEGER NOT NULL,
         date         TEXT,
+        match_time   TEXT,
         league       TEXT,
         home_id      INTEGER,
         home_name    TEXT,
@@ -240,3 +241,18 @@ def create_all(conn: sqlite3.Connection) -> None:
     with conn:
         for stmt in _DDL:
             conn.execute(stmt)
+    _migrate(conn)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Apply incremental schema migrations for existing databases."""
+    _add_column_if_missing(conn, "match_recent", "match_time", "TEXT")
+
+
+def _add_column_if_missing(
+    conn: sqlite3.Connection, table: str, column: str, col_type: str
+) -> None:
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        with conn:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")

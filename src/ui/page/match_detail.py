@@ -9,7 +9,8 @@ External API:
 from nicegui import ui, run
 
 from src.db import get_conn
-from src.service.match_detail import fetch_match_detail
+from src.service.match_detail import fetch_match_detail, fetch_match_time
+from src.service.match_odds_history import fetch_odds_history
 from src.service.match_odds_list import fetch_match_odds_list
 from src.sync.coordinator import should_fetch_detail, should_fetch_odds
 
@@ -87,15 +88,20 @@ def _query_recent_matches(mid: int) -> dict:
                        ORDER BY oh.change_time DESC
                    ) AS rn
             FROM odds_history oh
-            LEFT JOIN matches m ON oh.schedule_id = m.schedule_id
+            -- 优先用 matches.match_time，其次用 match_recent.match_time
+            LEFT JOIN matches      m   ON oh.schedule_id = m.schedule_id
+            LEFT JOIN match_recent mr2 ON oh.schedule_id = mr2.match_id
+                                      AND mr2.schedule_id = ?
+                                      AND mr2.match_time IS NOT NULL
             WHERE oh.company_id = ?
               AND oh.is_opening = 0
-              AND (m.match_time IS NULL
-                   OR oh.change_time <= datetime(m.match_time, '-30 minutes'))
+              AND oh.change_time <= datetime(
+                      COALESCE(m.match_time, mr2.match_time),
+                      '-30 minutes')
         ) h30 ON h30.schedule_id = mr.match_id AND h30.rn = 1
         WHERE mr.schedule_id = ?
         ORDER BY mr.side, mr.id
-    """, (_WH_COMPANY_ID, _WH_COMPANY_ID, mid)).fetchall()
+    """, (_WH_COMPANY_ID, mid, _WH_COMPANY_ID, mid)).fetchall()
 
     result: dict = {'home': [], 'away': []}
     for r in rows:
@@ -309,21 +315,65 @@ def _render_odds(odds_rows: list[dict]):
                         _no_data_hint()
 
 
+def _parse_year(date_str: str | None) -> int:
+    """从 'YY-MM-DD' 格式日期中解析 4 位年份，用于补全 odds_history 的时间戳。"""
+    import datetime
+    if date_str:
+        try:
+            return 2000 + int(str(date_str)[:2])
+        except (ValueError, TypeError):
+            pass
+    return datetime.date.today().year
+
+
 def _fetch_recent_odds(mid: int) -> None:
-    """为 match_recent 里尚无赔率记录的历史场次补抓欧赔。"""
+    """为 match_recent 里的历史场次补抓欧赔快照及赔率历史（赛前半小时赔率依赖后者）。"""
     conn = get_conn()
+    # 同时取 date 字段，用于推算历史场次的年份
     rows = conn.execute(
-        "SELECT DISTINCT match_id FROM match_recent WHERE schedule_id = ?", (mid,)
+        "SELECT DISTINCT match_id, MAX(date) FROM match_recent WHERE schedule_id = ? GROUP BY match_id",
+        (mid,)
     ).fetchall()
-    for (match_id,) in rows:
-        has = conn.execute(
+    for match_id, date_str in rows:
+        # ── 1. 补抓欧赔快照 ────────────────────────────────────────────
+        has_odds = conn.execute(
             "SELECT 1 FROM match_odds WHERE schedule_id = ? LIMIT 1", (match_id,)
         ).fetchone()
-        if not has:
+        if not has_odds:
             try:
                 fetch_match_odds_list(match_id)
             except Exception:
-                pass  # 历史场次可能已下线（404），跳过不影响主流程
+                continue  # 历史场次可能已下线（404），跳过
+
+        # ── 2. 补抓 WH 赔率历史（赛前半小时赔率数据来源）─────────────
+        has_history = conn.execute(
+            "SELECT 1 FROM odds_history WHERE schedule_id = ? AND company_id = ? LIMIT 1",
+            (match_id, _WH_COMPANY_ID)
+        ).fetchone()
+        if not has_history:
+            odds_row = conn.execute(
+                "SELECT record_id FROM match_odds WHERE schedule_id = ? AND company_id = ?",
+                (match_id, _WH_COMPANY_ID)
+            ).fetchone()
+            if odds_row:
+                try:
+                    fetch_odds_history(odds_row[0], match_id, _WH_COMPANY_ID, _parse_year(date_str))
+                except Exception:
+                    pass  # 历史赔率页面可能已下线，跳过
+
+        # ── 3. 补抓开球时间（精确 T-30min 计算的基础）──────────────────
+        has_time = conn.execute(
+            "SELECT 1 FROM match_recent WHERE schedule_id = ? AND match_id = ? AND match_time IS NOT NULL LIMIT 1",
+            (mid, match_id)
+        ).fetchone()
+        if not has_time:
+            mt = fetch_match_time(match_id)
+            if mt:
+                with conn:
+                    conn.execute(
+                        "UPDATE match_recent SET match_time = ? WHERE schedule_id = ? AND match_id = ?",
+                        (mt, mid, match_id)
+                    )
 
 
 def _no_data_hint():
