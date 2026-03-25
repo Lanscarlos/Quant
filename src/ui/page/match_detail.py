@@ -66,6 +66,54 @@ def _query_match(mid: int) -> dict | None:
     }
 
 
+def _query_h2h(mid: int) -> dict:
+    """Returns last 6 head-to-head matches between the two teams, with WH final odds."""
+    conn = get_conn()
+    team_row = conn.execute(
+        "SELECT home_team_id, away_team_id FROM matches WHERE schedule_id = ?", (mid,)
+    ).fetchone()
+    if not team_row:
+        return {'rows': [], 'win': 0, 'draw': 0, 'loss': 0}
+    h_id, a_id = team_row
+
+    rows = conn.execute("""
+        SELECT mr.home_name, mr.away_name, mr.home_id,
+               mr.home_ft, mr.away_ft,
+               wo.cur_win, wo.cur_draw, wo.cur_lose
+        FROM match_recent mr
+        LEFT JOIN match_odds wo ON wo.schedule_id = mr.match_id AND wo.company_id = ?
+        WHERE (
+            (mr.home_id = ? AND mr.away_id = ?)
+            OR (mr.home_id = ? AND mr.away_id = ?)
+        )
+        GROUP BY mr.match_id
+        ORDER BY mr.date DESC
+        LIMIT 6
+    """, (_WH_COMPANY_ID, h_id, a_id, a_id, h_id)).fetchall()
+
+    result_rows, win, draw, loss = [], 0, 0, 0
+    for r in rows:
+        home_name, away_name, home_id = r[0], r[1], r[2]
+        home_ft, away_ft = r[3], r[4]
+        # side from perspective of the current match's home team
+        side = '主' if home_id == h_id else '客'
+        if home_ft is not None and away_ft is not None:
+            focus_win = (home_ft > away_ft) if home_id == h_id else (away_ft > home_ft)
+            focus_loss = (home_ft < away_ft) if home_id == h_id else (away_ft < home_ft)
+            if focus_win:    win  += 1
+            elif focus_loss: loss += 1
+            else:            draw += 1
+        score = f"{home_ft}:{away_ft}" if home_ft is not None else '-'
+        result_rows.append({
+            'side':      side,
+            'home_name': home_name or '',
+            'away_name': away_name or '',
+            'score':     score,
+            'cur_odds':  f"{_f(r[5])}/{_f(r[6])}/{_f(r[7])}",
+        })
+    return {'rows': result_rows, 'win': win, 'draw': draw, 'loss': loss}
+
+
 def _query_recent_matches(mid: int) -> dict:
     """Returns recent match history for home/away sides with William Hill odds.
 
@@ -273,6 +321,34 @@ def _render_recent_matches(recent: dict, match: dict):
                             _no_data_hint()
 
 
+_H2H_COLS = [
+    {'name': 'side',      'label': '主/客', 'field': 'side',      'align': 'center'},
+    {'name': 'home_name', 'label': '主场',   'field': 'home_name', 'align': 'left'},
+    {'name': 'away_name', 'label': '客场',   'field': 'away_name', 'align': 'left'},
+    {'name': 'score',     'label': '比分',   'field': 'score',     'align': 'center'},
+    {'name': 'cur',       'label': '最终赔率', 'field': 'cur_odds',  'align': 'center'},
+]
+
+
+def _render_h2h(h2h: dict):
+    with ui.column().classes('w-full gap-2'):
+        with ui.row().classes('items-center gap-2 px-1'):
+            ui.label('近六场交手').classes('text-sm font-semibold text-slate-600')
+            rows = h2h['rows']
+            if rows:
+                win, draw, loss = h2h['win'], h2h['draw'], h2h['loss']
+                ui.label(f'胜{win} 负{loss} 平{draw}').classes(
+                    'text-xs text-slate-500 bg-slate-50 border border-slate-200 '
+                    'rounded px-2 py-0.5'
+                )
+        if not h2h['rows']:
+            _no_data_hint()
+            return
+        ui.table(columns=_H2H_COLS, rows=h2h['rows']) \
+            .classes('w-full text-xs') \
+            .props('dense flat bordered')
+
+
 _ODDS_COLS = [
     {'name': 'type',   'label': '',      'field': 'type',   'align': 'left'},
     {'name': 'win',    'label': '胜',    'field': 'win',    'align': 'center'},
@@ -426,12 +502,15 @@ def render(on_back: callable = None):
                 time_label.set_text(match['match_time'])
                 extras    = _query_header_extras(mid)
                 recent    = _query_recent_matches(mid)
+                h2h       = _query_h2h(mid)
                 odds_rows = _query_odds(mid)
 
                 with ui.column().classes('w-full gap-4 p-4'):
                     _render_match_header(match, extras)
                     ui.separator().classes('my-1')
                     _render_recent_matches(recent, match)
+                    ui.separator().classes('my-1')
+                    _render_h2h(h2h)
                     ui.separator().classes('my-1')
                     _render_odds(odds_rows)
 
