@@ -109,7 +109,7 @@ def _fetch_and_parse(url: str = _DATA_URL) -> tuple[str, list[dict]]:
             record["match_time"] = f"{date_prefix} {record['match_time']}"
         result.append(record)
 
-    return date_str, result
+    return date_prefix, result
 
 
 def _save_to_db(conn, records: list[dict]) -> dict:
