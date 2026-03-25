@@ -6,6 +6,8 @@ External API:
   load(match_id) — call before navigating to this page
   render(on_back) — registered with the Router
 """
+import datetime
+
 from nicegui import ui, run
 
 from src.db import get_conn
@@ -92,7 +94,7 @@ def _query_recent_matches(mid: int) -> dict:
             LEFT JOIN matches      m   ON oh.schedule_id = m.schedule_id
             LEFT JOIN match_recent mr2 ON oh.schedule_id = mr2.match_id
                                       AND mr2.schedule_id = ?
-                                      AND mr2.match_time IS NOT NULL
+                                      AND mr2.match_time IS NOT NULL AND mr2.match_time != ''
             WHERE oh.company_id = ?
               AND oh.is_opening = 0
               AND oh.change_time <= datetime(
@@ -317,7 +319,6 @@ def _render_odds(odds_rows: list[dict]):
 
 def _parse_year(date_str: str | None) -> int:
     """从 'YY-MM-DD' 格式日期中解析 4 位年份，用于补全 odds_history 的时间戳。"""
-    import datetime
     if date_str:
         try:
             return 2000 + int(str(date_str)[:2])
@@ -329,12 +330,11 @@ def _parse_year(date_str: str | None) -> int:
 def _fetch_recent_odds(mid: int) -> None:
     """为 match_recent 里的历史场次补抓欧赔快照及赔率历史（赛前半小时赔率依赖后者）。"""
     conn = get_conn()
-    # 同时取 date 字段，用于推算历史场次的年份
     rows = conn.execute(
-        "SELECT DISTINCT match_id, MAX(date) FROM match_recent WHERE schedule_id = ? GROUP BY match_id",
+        "SELECT match_id, MAX(date), MAX(match_time) FROM match_recent WHERE schedule_id = ? GROUP BY match_id",
         (mid,)
     ).fetchall()
-    for match_id, date_str in rows:
+    for match_id, date_str, existing_time in rows:
         # ── 1. 补抓欧赔快照 ────────────────────────────────────────────
         has_odds = conn.execute(
             "SELECT 1 FROM match_odds WHERE schedule_id = ? LIMIT 1", (match_id,)
@@ -362,18 +362,13 @@ def _fetch_recent_odds(mid: int) -> None:
                     pass  # 历史赔率页面可能已下线，跳过
 
         # ── 3. 补抓开球时间（精确 T-30min 计算的基础）──────────────────
-        has_time = conn.execute(
-            "SELECT 1 FROM match_recent WHERE schedule_id = ? AND match_id = ? AND match_time IS NOT NULL LIMIT 1",
-            (mid, match_id)
-        ).fetchone()
-        if not has_time:
+        if existing_time is None:  # None=未尝试；''=已尝试但页面已下线
             mt = fetch_match_time(match_id)
-            if mt:
-                with conn:
-                    conn.execute(
-                        "UPDATE match_recent SET match_time = ? WHERE schedule_id = ? AND match_id = ?",
-                        (mt, mid, match_id)
-                    )
+            with conn:
+                conn.execute(
+                    "UPDATE match_recent SET match_time = ? WHERE schedule_id = ? AND match_id = ?",
+                    (mt or "", mid, match_id)
+                )
 
 
 def _no_data_hint():
