@@ -44,14 +44,16 @@ def should_fetch_match_list() -> bool:
 _DETAIL_STALE = timedelta(hours=6)
 
 
-def should_fetch_detail(schedule_id: int) -> bool:
+def should_fetch_detail(schedule_id: int, *, status: int | None = None) -> bool:
     """True → 调用 fetch_match_detail()；False → 直接读 DB。"""
     conn = get_conn()
     row = conn.execute(
         "SELECT fetched_at FROM match_standings WHERE schedule_id = ? LIMIT 1",
         (schedule_id,),
     ).fetchone()
-    if _match_status(schedule_id) == -1:
+    if status is None:
+        status = _match_status(schedule_id)
+    if status == -1:
         return row is None      # 完场：DB 没有才抓，有了永不重抓
     return _is_stale(row[0] if row else None, _DETAIL_STALE)
 
@@ -66,10 +68,11 @@ _ODDS_THRESHOLDS: dict[int, timedelta] = {
 _ODDS_STALE_DEFAULT = timedelta(minutes=30)
 
 
-def should_fetch_odds(schedule_id: int) -> bool:
+def should_fetch_odds(schedule_id: int, *, status: int | None = None) -> bool:
     """True → 调用 fetch_match_odds_list()；False → 直接读 DB。"""
     conn = get_conn()
-    status = _match_status(schedule_id)
+    if status is None:
+        status = _match_status(schedule_id)
     if status == -1:
         count = conn.execute(
             "SELECT COUNT(*) FROM match_odds WHERE schedule_id = ?", (schedule_id,)

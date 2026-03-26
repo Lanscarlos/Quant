@@ -191,6 +191,7 @@ _DDL = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_odds_history_rid   ON odds_history(record_id)",
     "CREATE INDEX IF NOT EXISTS idx_odds_history_match ON odds_history(schedule_id)",
+    "CREATE INDEX IF NOT EXISTS idx_odds_history_lookup ON odds_history(schedule_id, company_id, is_opening, change_time DESC)",
 
     # ------------------------------------------------------------------
     # 9. match_asian_odds — 亚让赔率快照

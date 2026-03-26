@@ -6,6 +6,7 @@ External API:
   load(match_id) — call before navigating to this page
   render(on_back) — registered with the Router
 """
+import asyncio
 import datetime
 
 from nicegui import ui, run
@@ -16,7 +17,7 @@ from src.service.match_odds_history import fetch_odds_history
 from src.service.match_odds_list import fetch_match_odds_list
 from src.sync.coordinator import should_fetch_detail, should_fetch_odds
 
-_state: dict = {'match_id': None}
+_state: dict = {'match_id': None, 'sections': None, 'auto_fetched': False}
 _refresh_fn: list = [None]
 
 _WH_COMPANY_ID = 115  # William Hill
@@ -25,6 +26,8 @@ _WH_COMPANY_ID = 115  # William Hill
 def load(match_id: int | str) -> None:
     """Set current match and trigger page refresh."""
     _state['match_id'] = int(match_id)
+    _state['sections'] = None
+    _state['auto_fetched'] = False
     if _refresh_fn[0]:
         _refresh_fn[0]()
 
@@ -410,29 +413,33 @@ def _parse_year(date_str: str | None) -> int:
 
 def _fetch_recent_odds(mid: int) -> None:
     """为 match_recent 里的历史场次补抓欧赔快照及赔率历史（赛前半小时赔率依赖后者）。"""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     conn = get_conn()
     rows = conn.execute(
         "SELECT match_id, MAX(date), MAX(match_time) FROM match_recent WHERE schedule_id = ? GROUP BY match_id",
         (mid,)
     ).fetchall()
-    for match_id, date_str, existing_time in rows:
+
+    def _process_one(match_id, date_str, existing_time):
+        c = get_conn()
         # ── 1. 补抓欧赔快照 ────────────────────────────────────────────
-        has_odds = conn.execute(
+        has_odds = c.execute(
             "SELECT 1 FROM match_odds WHERE schedule_id = ? LIMIT 1", (match_id,)
         ).fetchone()
         if not has_odds:
             try:
                 fetch_match_odds_list(match_id)
             except Exception:
-                continue  # 历史场次可能已下线（404），跳过
+                return  # 历史场次可能已下线（404），跳过
 
         # ── 2. 补抓 WH 赔率历史（赛前半小时赔率数据来源）─────────────
-        has_history = conn.execute(
+        has_history = c.execute(
             "SELECT 1 FROM odds_history WHERE schedule_id = ? AND company_id = ? LIMIT 1",
             (match_id, _WH_COMPANY_ID)
         ).fetchone()
         if not has_history:
-            odds_row = conn.execute(
+            odds_row = c.execute(
                 "SELECT record_id FROM match_odds WHERE schedule_id = ? AND company_id = ?",
                 (match_id, _WH_COMPANY_ID)
             ).fetchone()
@@ -445,11 +452,32 @@ def _fetch_recent_odds(mid: int) -> None:
         # ── 3. 补抓开球时间（精确 T-30min 计算的基础）──────────────────
         if existing_time is None:  # None=未尝试；''=已尝试但页面已下线
             mt = fetch_match_time(match_id)
-            with conn:
-                conn.execute(
+            with c:
+                c.execute(
                     "UPDATE match_recent SET match_time = ? WHERE schedule_id = ? AND match_id = ?",
                     (mt or "", mid, match_id)
                 )
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(_process_one, r[0], r[1], r[2]) for r in rows]
+        for f in as_completed(futures):
+            try:
+                f.result()
+            except Exception:
+                pass
+
+
+def _query_all_sections(mid: int) -> dict:
+    """Batch-query all detail sections for async loading."""
+    return {
+        'extras': _query_header_extras(mid),
+        'recent': _query_recent_matches(mid),
+        'h2h': _query_h2h(mid),
+        'odds': _query_odds(mid),
+        'detail_fetched': get_conn().execute(
+            "SELECT 1 FROM match_standings WHERE schedule_id = ? LIMIT 1", (mid,)
+        ).fetchone() is not None,
+    }
 
 
 def _no_data_hint():
@@ -505,45 +533,64 @@ def render(on_back: callable = None):
                 title_label.set_text(f"{match['home_team']}  vs  {match['away_team']}")
                 league_label.set_text(match['league'])
                 time_label.set_text(match['match_time'])
-                extras    = _query_header_extras(mid)
-                recent    = _query_recent_matches(mid)
-                h2h       = _query_h2h(mid)
-                odds_rows = _query_odds(mid)
-                detail_fetched = get_conn().execute(
-                    "SELECT 1 FROM match_standings WHERE schedule_id = ? LIMIT 1", (mid,)
-                ).fetchone() is not None
+
+                sections = _state.get('sections')
 
                 with ui.column().classes('w-full gap-4 p-4'):
-                    _render_match_header(match, extras)
-                    ui.separator().classes('my-1')
-                    _render_recent_matches(recent, match)
-                    ui.separator().classes('my-1')
-                    _render_h2h(h2h, detail_fetched)
-                    ui.separator().classes('my-1')
-                    _render_odds(odds_rows)
+                    if sections:
+                        _render_match_header(match, sections['extras'])
+                        ui.separator().classes('my-1')
+                        _render_recent_matches(sections['recent'], match)
+                        ui.separator().classes('my-1')
+                        _render_h2h(sections['h2h'], sections['detail_fetched'])
+                        ui.separator().classes('my-1')
+                        _render_odds(sections['odds'])
+                    else:
+                        # 骨架：先显示基本 header + 加载动画
+                        _render_match_header(match, {})
+                        ui.separator().classes('my-1')
+                        with ui.row().classes('w-full justify-center py-8 gap-2'):
+                            ui.spinner(size='lg').classes('text-blue-400')
+                            ui.label('加载中...').classes('text-sm text-slate-400')
 
-                # Auto-fetch if data is stale
-                async def _auto_fetch():
-                    need_detail = should_fetch_detail(mid)
-                    need_odds   = should_fetch_odds(mid)
-                    if not (need_detail or need_odds):
-                        return
-                    spinner.classes(remove='hidden')
-                    fetch_btn.disable()
-                    try:
-                        if need_detail:
-                            await run.io_bound(fetch_match_detail, mid)
-                        if need_odds:
-                            await run.io_bound(fetch_match_odds_list, mid)
-                        await run.io_bound(_fetch_recent_odds, mid)
+                if not sections:
+                    # 首次渲染：异步加载数据区
+                    async def _load_sections():
+                        data = await run.io_bound(_query_all_sections, mid)
+                        _state['sections'] = data
                         detail_content.refresh()
-                    except Exception:
-                        pass
-                    finally:
-                        spinner.classes(add='hidden')
-                        fetch_btn.enable()
+                    ui.timer(0, _load_sections, once=True)
 
-                ui.timer(0, _auto_fetch, once=True)
+                elif not _state.get('auto_fetched'):
+                    # 数据已加载：检查是否需要自动抓取
+                    async def _auto_fetch():
+                        status = match['status']
+                        need_detail = should_fetch_detail(mid, status=status)
+                        need_odds   = should_fetch_odds(mid, status=status)
+                        if not (need_detail or need_odds):
+                            _state['auto_fetched'] = True
+                            return
+                        spinner.classes(remove='hidden')
+                        fetch_btn.disable()
+                        try:
+                            coros = []
+                            if need_detail:
+                                coros.append(run.io_bound(fetch_match_detail, mid))
+                            if need_odds:
+                                coros.append(run.io_bound(fetch_match_odds_list, mid))
+                            if coros:
+                                await asyncio.gather(*coros)
+                            await run.io_bound(_fetch_recent_odds, mid)
+                            _state['auto_fetched'] = True
+                            _state['sections'] = await run.io_bound(_query_all_sections, mid)
+                            detail_content.refresh()
+                        except Exception:
+                            _state['auto_fetched'] = True
+                        finally:
+                            spinner.classes(add='hidden')
+                            fetch_btn.enable()
+
+                    ui.timer(0, _auto_fetch, once=True)
 
             _refresh_fn[0] = detail_content.refresh
             detail_content()
@@ -557,9 +604,12 @@ def render(on_back: callable = None):
         spinner.classes(remove='hidden')
         fetch_btn.disable()
         try:
-            await run.io_bound(fetch_match_detail, mid)
-            await run.io_bound(fetch_match_odds_list, mid)
+            await asyncio.gather(
+                run.io_bound(fetch_match_detail, mid),
+                run.io_bound(fetch_match_odds_list, mid),
+            )
             await run.io_bound(_fetch_recent_odds, mid)
+            _state['sections'] = await run.io_bound(_query_all_sections, mid)
             detail_content.refresh()
         except Exception as exc:
             err_label.set_text(f'抓取失败：{exc}')
