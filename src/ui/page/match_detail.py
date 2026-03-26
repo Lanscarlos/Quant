@@ -330,7 +330,7 @@ _H2H_COLS = [
 ]
 
 
-def _render_h2h(h2h: dict):
+def _render_h2h(h2h: dict, fetched: bool = False):
     with ui.column().classes('w-full gap-2'):
         with ui.row().classes('items-center gap-2 px-1'):
             ui.label('近六场交手').classes('text-sm font-semibold text-slate-600')
@@ -342,7 +342,12 @@ def _render_h2h(h2h: dict):
                     'rounded px-2 py-0.5'
                 )
         if not h2h['rows']:
-            _no_data_hint()
+            if fetched:
+                with ui.row().classes('w-full items-center gap-2 py-3 justify-center'):
+                    ui.icon('info_outline').classes('text-slate-300 text-lg')
+                    ui.label('两队暂无历史交手记录').classes('text-xs text-slate-400')
+            else:
+                _no_data_hint()
             return
         ui.table(columns=_H2H_COLS, rows=h2h['rows']) \
             .classes('w-full text-xs') \
@@ -504,13 +509,16 @@ def render(on_back: callable = None):
                 recent    = _query_recent_matches(mid)
                 h2h       = _query_h2h(mid)
                 odds_rows = _query_odds(mid)
+                detail_fetched = get_conn().execute(
+                    "SELECT 1 FROM match_standings WHERE schedule_id = ? LIMIT 1", (mid,)
+                ).fetchone() is not None
 
                 with ui.column().classes('w-full gap-4 p-4'):
                     _render_match_header(match, extras)
                     ui.separator().classes('my-1')
                     _render_recent_matches(recent, match)
                     ui.separator().classes('my-1')
-                    _render_h2h(h2h)
+                    _render_h2h(h2h, detail_fetched)
                     ui.separator().classes('my-1')
                     _render_odds(odds_rows)
 
