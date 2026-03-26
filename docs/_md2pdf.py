@@ -231,8 +231,8 @@ def parse(md: str) -> list:
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 def main():
-    md_path  = Path("docs/database_schema.md")
-    out_path = Path("docs/database_schema.pdf")
+    md_path  = Path("docs/数据库说明.md")
+    out_path = Path("docs/数据库说明.pdf")
 
     doc = SimpleDocTemplate(
         str(out_path),
