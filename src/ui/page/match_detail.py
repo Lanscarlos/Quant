@@ -17,7 +17,7 @@ from src.service.match_odds_history import fetch_odds_history
 from src.service.match_odds_list import fetch_match_odds_list
 from src.sync.coordinator import should_fetch_detail, should_fetch_odds
 
-_state: dict = {'match_id': None, 'sections': None, 'auto_fetched': False}
+_state: dict = {'match_id': None, 'sections': None, 'auto_fetched': False, 'fetching': False}
 _refresh_fn: list = [None]
 
 _WH_COMPANY_ID = 115  # William Hill
@@ -28,6 +28,7 @@ def load(match_id: int | str) -> None:
     _state['match_id'] = int(match_id)
     _state['sections'] = None
     _state['auto_fetched'] = False
+    _state['fetching'] = False
     if _refresh_fn[0]:
         _refresh_fn[0]()
 
@@ -486,6 +487,37 @@ def _no_data_hint():
         ui.label('暂无数据，请点击「抓取数据」').classes('text-xs text-slate-400')
 
 
+def _render_skeleton():
+    """Render skeleton placeholders mimicking the real content layout."""
+    _W = 'animation="wave"'
+    # 联赛数据
+    with ui.column().classes('w-full gap-2'):
+        ui.skeleton('text').classes('w-20').props(_W)
+        with ui.row().classes('w-full gap-3 items-start'):
+            for _ in range(2):
+                with ui.card().classes('flex-1').props('flat bordered'):
+                    with ui.column().classes('gap-2 p-3'):
+                        ui.skeleton('text').classes('w-32').props(_W)
+                        for _ in range(6):
+                            ui.skeleton('text').classes('w-full').props(_W)
+    ui.separator().classes('my-1')
+    # 近六场交手
+    with ui.column().classes('w-full gap-2'):
+        ui.skeleton('text').classes('w-24').props(_W)
+        for _ in range(4):
+            ui.skeleton('text').classes('w-full').props(_W)
+    ui.separator().classes('my-1')
+    # 欧赔数据
+    with ui.column().classes('w-full gap-2'):
+        ui.skeleton('text').classes('w-20').props(_W)
+        with ui.row().classes('w-full gap-4'):
+            for _ in range(2):
+                with ui.column().classes('flex-1 gap-2'):
+                    ui.skeleton('text').classes('w-28').props(_W)
+                    for _ in range(3):
+                        ui.skeleton('text').classes('w-full').props(_W)
+
+
 # ── Main render ───────────────────────────────────────────────────────────────
 
 def render(on_back: callable = None):
@@ -546,14 +578,11 @@ def render(on_back: callable = None):
                         ui.separator().classes('my-1')
                         _render_odds(sections['odds'])
                     else:
-                        # 骨架：先显示基本 header + 加载动画
                         _render_match_header(match, {})
                         ui.separator().classes('my-1')
-                        with ui.row().classes('w-full justify-center py-8 gap-2'):
-                            ui.spinner(size='lg').classes('text-blue-400')
-                            ui.label('加载中...').classes('text-sm text-slate-400')
+                        _render_skeleton()
 
-                if not sections:
+                if not sections and not _state.get('fetching'):
                     # 首次渲染：异步加载数据区
                     async def _load_sections():
                         data = await run.io_bound(_query_all_sections, mid)
@@ -572,6 +601,9 @@ def render(on_back: callable = None):
                             return
                         spinner.classes(remove='hidden')
                         fetch_btn.disable()
+                        _state['fetching'] = True
+                        _state['sections'] = None
+                        detail_content.refresh()
                         try:
                             coros = []
                             if need_detail:
@@ -586,7 +618,10 @@ def render(on_back: callable = None):
                             detail_content.refresh()
                         except Exception:
                             _state['auto_fetched'] = True
+                            _state['sections'] = await run.io_bound(_query_all_sections, mid)
+                            detail_content.refresh()
                         finally:
+                            _state['fetching'] = False
                             spinner.classes(add='hidden')
                             fetch_btn.enable()
 
@@ -603,6 +638,10 @@ def render(on_back: callable = None):
         err_label.set_text('')
         spinner.classes(remove='hidden')
         fetch_btn.disable()
+        prev_sections = _state['sections']
+        _state['fetching'] = True
+        _state['sections'] = None
+        detail_content.refresh()
         try:
             await asyncio.gather(
                 run.io_bound(fetch_match_detail, mid),
@@ -613,7 +652,10 @@ def render(on_back: callable = None):
             detail_content.refresh()
         except Exception as exc:
             err_label.set_text(f'抓取失败：{exc}')
+            _state['sections'] = prev_sections
+            detail_content.refresh()
         finally:
+            _state['fetching'] = False
             spinner.classes(add='hidden')
             fetch_btn.enable()
 
