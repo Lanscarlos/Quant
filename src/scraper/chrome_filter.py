@@ -24,8 +24,6 @@ import sqlite3
 import tempfile
 import base64
 import argparse
-import ctypes
-import ctypes.wintypes
 import glob as _glob
 
 
@@ -34,42 +32,29 @@ import glob as _glob
 # ---------------------------------------------------------------------------
 
 def _copy_locked_file(src: str, dst: str):
-    """使用 Win32 CreateFileW 以共享模式读取被锁定的文件."""
-    kernel32 = ctypes.windll.kernel32
+    """使用 win32file 以共享模式读取被浏览器锁定的文件."""
+    import win32file
+    import pywintypes
 
-    GENERIC_READ = 0x80000000
-    FILE_SHARE_READ = 0x1
-    FILE_SHARE_WRITE = 0x2
-    FILE_SHARE_DELETE = 0x4
-    OPEN_EXISTING = 3
-    FILE_ATTRIBUTE_NORMAL = 0x80
-    INVALID_HANDLE_VALUE = ctypes.wintypes.HANDLE(-1).value
-
-    handle = kernel32.CreateFileW(
+    handle = win32file.CreateFile(
         src,
-        GENERIC_READ,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        win32file.GENERIC_READ,
+        win32file.FILE_SHARE_READ | win32file.FILE_SHARE_WRITE | win32file.FILE_SHARE_DELETE,
         None,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
+        win32file.OPEN_EXISTING,
+        win32file.FILE_ATTRIBUTE_NORMAL,
         None,
     )
 
-    if handle == INVALID_HANDLE_VALUE:
-        raise PermissionError(f"无法打开文件 (即使共享模式): {src}")
-
     try:
-        import msvcrt
-        fd = msvcrt.open_osfhandle(handle, os.O_RDONLY)
-        with os.fdopen(fd, "rb") as f_src, open(dst, "wb") as f_dst:
+        with open(dst, "wb") as f_dst:
             while True:
-                chunk = f_src.read(1024 * 1024)
+                hr, chunk = win32file.ReadFile(handle, 1024 * 1024)
                 if not chunk:
                     break
                 f_dst.write(chunk)
-    except Exception:
-        kernel32.CloseHandle(handle)
-        raise
+    finally:
+        handle.Close()
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +183,7 @@ def read_cookies(user_data_path: str, profile: str = "Default") -> dict[str, str
     """
     profile_dir = os.path.join(user_data_path, profile)
 
-    # 新版 Chrome 把 Cookies 移到了 Network/ 子目录
+    # 新版 Chrome/Edge 把 Cookies 移到了 Network/ 子目录
     cookies_db = os.path.join(profile_dir, "Network", "Cookies")
     if not os.path.exists(cookies_db):
         cookies_db = os.path.join(profile_dir, "Cookies")
@@ -209,35 +194,108 @@ def read_cookies(user_data_path: str, profile: str = "Default") -> dict[str, str
             f"  尝试路径: {profile_dir}/Cookies"
         )
 
-    # 复制到临时文件 (浏览器运行时会锁文件)
-    tmp = tempfile.mktemp(suffix=".db")
-    try:
-        shutil.copy2(cookies_db, tmp)
-    except PermissionError:
-        _copy_locked_file(cookies_db, tmp)
-
-    aes_key = _get_chrome_aes_key(user_data_path)
     result: dict[str, str] = {}
 
+    # 策略 1: 复制文件后用 SQLite 打开 (浏览器未运行时)
+    conn = None
+    tmp = None
     try:
-        conn = sqlite3.connect(tmp)
-        cur = conn.cursor()
-        for name in TARGET_COOKIES:
-            cur.execute(
-                "SELECT value, encrypted_value FROM cookies "
-                "WHERE host_key LIKE '%titan007%' AND name = ?",
-                (name,),
-            )
-            row = cur.fetchone()
-            if row:
-                plain, encrypted = row
-                if plain:
-                    result[name] = plain
-                elif encrypted:
-                    result[name] = _decrypt_value(encrypted, aes_key)
-        conn.close()
+        try:
+            tmp = tempfile.mktemp(suffix=".db")
+            _copy_locked_file(cookies_db, tmp)
+            conn = sqlite3.connect(tmp)
+        except Exception:
+            pass
+
+        if conn is None:
+            try:
+                db_fwd = cookies_db.replace(os.sep, "/")
+                uri = f"file:///{db_fwd}?mode=ro&nolock=1&immutable=1"
+                conn = sqlite3.connect(uri, uri=True)
+                conn.execute("SELECT 1 FROM cookies LIMIT 1")
+            except Exception:
+                conn = None
+
+        if conn is not None:
+            aes_key = _get_chrome_aes_key(user_data_path)
+            cur = conn.cursor()
+            for name in TARGET_COOKIES:
+                cur.execute(
+                    "SELECT value, encrypted_value FROM cookies "
+                    "WHERE host_key LIKE '%titan007%' AND name = ?",
+                    (name,),
+                )
+                row = cur.fetchone()
+                if row:
+                    plain, encrypted = row
+                    if plain:
+                        result[name] = plain
+                    elif encrypted:
+                        result[name] = _decrypt_value(encrypted, aes_key)
+            conn.close()
+            return result
     finally:
-        os.unlink(tmp)
+        if tmp and os.path.exists(tmp):
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+    # 策略 2: 文件被锁定 → 用 Playwright 通过浏览器 JS 读取 Cookie
+    result = _read_cookies_via_playwright(user_data_path, profile)
+    return result
+
+
+def _read_cookies_via_playwright(user_data_path: str = "", profile: str = "Default") -> dict[str, str]:
+    """浏览器运行时, 通过 Playwright 使用持久化 Profile 读取 Cookie."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        raise RuntimeError(
+            "Cookies 文件被浏览器锁定, 需要 Playwright 回退读取\n"
+            "  pip install playwright && playwright install chromium"
+        )
+
+    js_read_cookies = """
+    () => {
+        const result = {};
+        const cookies = document.cookie.split('; ');
+        const targets = ['win007BfCookie', 'FS007Filter', 'Bet007live_concernId_AllDomain'];
+        for (const c of cookies) {
+            const [name, ...rest] = c.split('=');
+            if (targets.includes(name)) {
+                result[name] = rest.join('=');
+            }
+        }
+        return result;
+    }
+    """
+
+    profile_dir = os.path.join(user_data_path, profile) if user_data_path else ""
+
+    with sync_playwright() as p:
+        if profile_dir and os.path.isdir(profile_dir):
+            # 使用持久化上下文, 复用用户的 Cookie
+            context = p.chromium.launch_persistent_context(
+                profile_dir,
+                channel="msedge",
+                headless=True,
+                args=["--disable-gpu", "--no-sandbox"],
+            )
+            page = context.new_page()
+        else:
+            browser = p.chromium.launch(channel="msedge", headless=True)
+            page = browser.new_page()
+            context = None
+
+        page.goto("https://live.titan007.com/oldIndexall.aspx",
+                  wait_until="domcontentloaded", timeout=60000)
+        result = page.evaluate(js_read_cookies)
+
+        if context:
+            context.close()
+        else:
+            browser.close()
 
     return result
 
@@ -434,11 +492,17 @@ def read_filter(user_data_path: str, profile: str = "Default") -> dict:
             'raw_localstorage': dict | None,
         }
     """
-    cookies = read_cookies(user_data_path, profile)
+    try:
+        cookies = read_cookies(user_data_path, profile)
+    except Exception as e:
+        print(f"  [警告] Cookie 读取失败: {e}")
+        cookies = {}
     ls_data = read_localstorage(user_data_path, profile)
 
-    config = parse_bf_cookie(cookies["win007BfCookie"]) if "win007BfCookie" in cookies else None
-    fs_filter = parse_fs_filter(cookies["FS007Filter"]) if "FS007Filter" in cookies else None
+    bf_raw = cookies.get("win007BfCookie", "")
+    config = parse_bf_cookie(bf_raw) if bf_raw and bf_raw != "null" else None
+    fs_raw = cookies.get("FS007Filter", "")
+    fs_filter = parse_fs_filter(fs_raw) if fs_raw and fs_raw != "null" else None
     concern_ids = parse_concern_ids(cookies.get("Bet007live_concernId_AllDomain", ""))
     hidden_ids = parse_hidden_ids(ls_data) if ls_data else []
 
@@ -452,13 +516,13 @@ def read_filter(user_data_path: str, profile: str = "Default") -> dict:
     }
 
 
-def print_result(result: dict):
+def print_result(result: dict, browser_label: str = "Browser"):
     """格式化打印筛选结果."""
     SEP = "-" * 55
 
     # 1) 全局配置
     print(f"\n{'=' * 55}")
-    print("  Chrome 中 titan007 赛事筛选状态")
+    print(f"  {browser_label} - titan007 赛事筛选状态")
     print(f"{'=' * 55}")
 
     config = result["config"]
@@ -615,8 +679,12 @@ def main():
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
-        print_result(result)
+        print_result(result, browser_label)
 
 
 if __name__ == "__main__":
+    # Windows 终端 GBK 兼容
+    if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding=sys.stdout.encoding, errors="replace")
     main()
