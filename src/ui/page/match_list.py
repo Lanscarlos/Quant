@@ -35,9 +35,17 @@ def _fmt_time(dt_str: str) -> str:
         return dt_str or '-'
 
 
-def _query_matches(statuses: list[int] | None = None) -> list[dict]:
+def _query_matches(statuses: list[int] | None = None,
+                   schedule_ids: list[str] | None = None) -> list[dict]:
     conn = get_conn()
-    rows = conn.execute("""
+    params: list = []
+    if schedule_ids is not None:
+        placeholders = ','.join('?' * len(schedule_ids))
+        where = f'WHERE m.schedule_id IN ({placeholders})'
+        params = list(schedule_ids)
+    else:
+        where = ''
+    rows = conn.execute(f"""
         SELECT
             m.schedule_id,
             m.match_time,
@@ -53,8 +61,9 @@ def _query_matches(statuses: list[int] | None = None) -> list[dict]:
         LEFT JOIN leagues l  ON m.league_abbr  = l.league_abbr
         LEFT JOIN teams   ht ON m.home_team_id = ht.team_id
         LEFT JOIN teams   at ON m.away_team_id = at.team_id
+        {where}
         ORDER BY m.match_time
-    """).fetchall()
+    """, params).fetchall()
 
     result = []
     for r in rows:
@@ -85,9 +94,11 @@ def render(on_match_click: callable = None):
     # 消除 ui.expansion 内容区域的默认内边距
     ui.add_css('.q-expansion-item__content { padding: 0 !important; }')
 
-    current_filter: list[list[int] | None] = [None]
-    current_page:   list[int]              = [0]
-    cached_rows:    list[list[dict]]       = [[]]
+    current_filter: list = [None]     # list[int] | None
+    current_page:   list = [0]
+    cached_rows:    list = [[]]
+    concern_mode:   list = [False]
+    concern_ids:    list = [[]]       # list[str]
 
     with ui.column().classes('w-full h-full gap-0'):
 
@@ -96,9 +107,12 @@ def render(on_match_click: callable = None):
             ui.icon('sports_soccer').classes('text-xl text-blue-600')
             ui.label('赛事列表').classes('text-lg font-bold text-slate-700')
             ui.space()
-            spinner     = ui.spinner(size='sm').classes('hidden')
-            err_label   = ui.label('').classes('text-xs text-red-500')
-            refresh_btn = ui.button('刷新', icon='refresh') \
+            spinner      = ui.spinner(size='sm').classes('hidden')
+            err_label    = ui.label('').classes('text-xs text-red-500')
+            concern_btn  = ui.button('置顶', icon='push_pin') \
+                .props('unelevated size=sm') \
+                .classes('!bg-slate-100 !text-slate-500')
+            refresh_btn  = ui.button('刷新', icon='refresh') \
                 .props('unelevated size=sm') \
                 .classes('!bg-blue-600 !text-white')
 
@@ -169,7 +183,8 @@ def render(on_match_click: callable = None):
                     match_area.refresh()
 
             def _reload():
-                cached_rows[0] = _query_matches(current_filter[0])
+                sids = concern_ids[0] if concern_mode[0] else None
+                cached_rows[0] = _query_matches(current_filter[0], schedule_ids=sids)
                 current_page[0] = 0
                 match_area.refresh()
 
@@ -209,6 +224,36 @@ def render(on_match_click: callable = None):
             lambda lb=lbl, st=statuses: _set_filter(lb, st)
         )
 
+    async def _toggle_concern():
+        if not concern_mode[0]:
+            # 开启置顶模式：从浏览器读取置顶 ID
+            try:
+                from src.scraper.chrome_filter import read_filter, _detect_browser  # noqa: SLF001
+                _, udp = _detect_browser()
+                if not udp:
+                    ui.notify('未检测到 Chrome 或 Edge 浏览器', type='negative')
+                    return
+                result = await run.io_bound(read_filter, udp)
+                ids = result.get('concern_ids', [])
+                if not ids:
+                    ui.notify('浏览器中无置顶赛事', type='warning')
+                    return
+                concern_ids[0] = ids
+                concern_mode[0] = True
+                concern_btn.classes(remove='!bg-slate-100 !text-slate-500',
+                                    add='!bg-yellow-100 !text-yellow-600')
+            except Exception as exc:
+                ui.notify(f'读取置顶失败：{exc}', type='negative')
+                return
+        else:
+            # 关闭置顶模式
+            concern_mode[0] = False
+            concern_ids[0] = []
+            concern_btn.classes(remove='!bg-yellow-100 !text-yellow-600',
+                                add='!bg-slate-100 !text-slate-500')
+        _reload()
+
+    concern_btn.on_click(_toggle_concern)
     refresh_btn.on_click(_on_refresh)
     prev_btn.on_click(_prev_page)
     next_btn.on_click(_next_page)

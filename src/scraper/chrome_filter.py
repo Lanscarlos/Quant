@@ -175,15 +175,27 @@ def _decrypt_value(encrypted_value: bytes, aes_key: bytes) -> str:
 #  读取 Cookie
 # ---------------------------------------------------------------------------
 
+def _is_chrome_running() -> bool:
+    """检测 Chrome 是否正在运行 (Windows tasklist)."""
+    try:
+        import subprocess
+        out = subprocess.run(
+            'tasklist /FI "IMAGENAME eq chrome.exe" /NH /FO CSV',
+            shell=True, capture_output=True, text=True, timeout=5,
+        ).stdout
+        return "chrome.exe" in out.lower()
+    except Exception:
+        return False
+
+
 def read_cookies(user_data_path: str, profile: str = "Default") -> dict[str, str]:
     """读取浏览器中 titan007.com 相关的目标 Cookie.
 
-    Returns:
-        {cookie_name: decrypted_value}
+    Chrome 运行时: 走 Playwright 路径（让 Chrome 自己解密 v20 cookies）
+    Chrome 未运行时: 直接读 SQLite（数据已完整刷盘，v10 DPAPI 可解密）
     """
     profile_dir = os.path.join(user_data_path, profile)
 
-    # 新版 Chrome/Edge 把 Cookies 移到了 Network/ 子目录
     cookies_db = os.path.join(profile_dir, "Network", "Cookies")
     if not os.path.exists(cookies_db):
         cookies_db = os.path.join(profile_dir, "Cookies")
@@ -194,46 +206,33 @@ def read_cookies(user_data_path: str, profile: str = "Default") -> dict[str, str
             f"  尝试路径: {profile_dir}/Cookies"
         )
 
-    result: dict[str, str] = {}
+    # Chrome 运行中 → 磁盘数据可能是旧的，且 v20 加密无法在外部解密
+    # 必须走 Playwright 让 Chrome 自己处理
+    if _is_chrome_running():
+        return _read_cookies_via_playwright(user_data_path, profile)
 
-    # 策略 1: 复制文件后用 SQLite 打开 (浏览器未运行时)
-    conn = None
+    # Chrome 未运行 → SQLite 已完整刷盘，v10 cookies 可用 DPAPI 解密
     tmp = None
     try:
-        try:
-            tmp = tempfile.mktemp(suffix=".db")
-            _copy_locked_file(cookies_db, tmp)
-            conn = sqlite3.connect(tmp)
-        except Exception:
-            pass
-
-        if conn is None:
-            try:
-                db_fwd = cookies_db.replace(os.sep, "/")
-                uri = f"file:///{db_fwd}?mode=ro&nolock=1&immutable=1"
-                conn = sqlite3.connect(uri, uri=True)
-                conn.execute("SELECT 1 FROM cookies LIMIT 1")
-            except Exception:
-                conn = None
-
-        if conn is not None:
-            aes_key = _get_chrome_aes_key(user_data_path)
-            cur = conn.cursor()
-            for name in TARGET_COOKIES:
-                cur.execute(
-                    "SELECT value, encrypted_value FROM cookies "
-                    "WHERE host_key LIKE '%titan007%' AND name = ?",
-                    (name,),
-                )
-                row = cur.fetchone()
-                if row:
-                    plain, encrypted = row
-                    if plain:
-                        result[name] = plain
-                    elif encrypted:
-                        result[name] = _decrypt_value(encrypted, aes_key)
-            conn.close()
-            return result
+        tmp = tempfile.mktemp(suffix=".db")
+        shutil.copy2(cookies_db, tmp)
+        conn = sqlite3.connect(tmp)
+        aes_key = _get_chrome_aes_key(user_data_path)
+        cur = conn.cursor()
+        result: dict[str, str] = {}
+        for name in TARGET_COOKIES:
+            cur.execute(
+                "SELECT value, encrypted_value FROM cookies WHERE name = ?",
+                (name,),
+            )
+            row = cur.fetchone()
+            if row:
+                plain, encrypted = row
+                result[name] = plain if plain else _decrypt_value(encrypted, aes_key)
+        conn.close()
+        return result
+    except Exception:
+        return {}
     finally:
         if tmp and os.path.exists(tmp):
             try:
@@ -241,13 +240,15 @@ def read_cookies(user_data_path: str, profile: str = "Default") -> dict[str, str
             except OSError:
                 pass
 
-    # 策略 2: 文件被锁定 → 用 Playwright 通过浏览器 JS 读取 Cookie
-    result = _read_cookies_via_playwright(user_data_path, profile)
-    return result
-
 
 def _read_cookies_via_playwright(user_data_path: str = "", profile: str = "Default") -> dict[str, str]:
-    """浏览器运行时, 通过 Playwright 使用持久化 Profile 读取 Cookie."""
+    """Chrome 运行时读取 Cookie。
+
+    Chrome 127+ 使用 App-Bound Encryption (v20)，外部脚本无法直接解密。
+    解决方案：将用户的 Cookies + Local State 复制到临时目录，用真正的
+    Chrome (channel="chrome") 加载，Chrome 自身调用 ChromeElevationService
+    解密 v20 cookies，再通过 context.cookies() 拿到明文值。
+    """
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -256,48 +257,73 @@ def _read_cookies_via_playwright(user_data_path: str = "", profile: str = "Defau
             "  pip install playwright && playwright install chromium"
         )
 
-    js_read_cookies = """
-    () => {
-        const result = {};
-        const cookies = document.cookie.split('; ');
-        const targets = ['win007BfCookie', 'FS007Filter', 'Bet007live_concernId_AllDomain'];
-        for (const c of cookies) {
-            const [name, ...rest] = c.split('=');
-            if (targets.includes(name)) {
-                result[name] = rest.join('=');
-            }
-        }
-        return result;
-    }
-    """
-
     profile_dir = os.path.join(user_data_path, profile) if user_data_path else ""
+    tmp_dir = None
 
-    with sync_playwright() as p:
-        if profile_dir and os.path.isdir(profile_dir):
-            # 使用持久化上下文, 复用用户的 Cookie
-            context = p.chromium.launch_persistent_context(
-                profile_dir,
-                channel="msedge",
-                headless=True,
-                args=["--disable-gpu", "--no-sandbox"],
-            )
-            page = context.new_page()
-        else:
-            browser = p.chromium.launch(channel="msedge", headless=True)
-            page = browser.new_page()
-            context = None
+    try:
+        # ── 构建最小化临时 Profile ──────────────────────────────────────
+        tmp_dir = tempfile.mkdtemp(prefix="quant_chrome_")
+        tmp_default = os.path.join(tmp_dir, "Default")
+        os.makedirs(tmp_default, exist_ok=True)
 
-        page.goto("https://live.titan007.com/oldIndexall.aspx",
-                  wait_until="domcontentloaded", timeout=60000)
-        result = page.evaluate(js_read_cookies)
+        # Local State 和 Cookies 均使用 win32file 共享读取，避免 Chrome 独占锁导致 WinError 32
+        local_state_src = os.path.join(user_data_path, "Local State")
+        if os.path.exists(local_state_src):
+            try:
+                _copy_locked_file(local_state_src, os.path.join(tmp_dir, "Local State"))
+            except Exception:
+                pass  # 无法复制则跳过，Chrome 仍可能读到部分 cookies
 
-        if context:
+        if profile_dir:
+            cookies_src = os.path.join(profile_dir, "Network", "Cookies")
+            if not os.path.exists(cookies_src):
+                cookies_src = os.path.join(profile_dir, "Cookies")
+            if os.path.exists(cookies_src):
+                net_dir = os.path.join(tmp_default, "Network")
+                os.makedirs(net_dir, exist_ok=True)
+                try:
+                    _copy_locked_file(cookies_src, os.path.join(net_dir, "Cookies"))
+                except Exception:
+                    pass  # 无法复制则跳过
+
+        # ── 用 Chrome 打开临时 Profile，让 Chrome 自己解密 v20 Cookies ──
+        query_urls = [
+            "https://live.titan007.com",
+            "https://titan007.com",
+            "https://bf.titan007.com",
+        ]
+
+        with sync_playwright() as p:
+            try:
+                context = p.chromium.launch_persistent_context(
+                    tmp_dir,
+                    channel="chrome",          # 必须用 Chrome 本体解密 v20
+                    headless=True,
+                    args=[
+                        "--no-first-run",
+                        "--disable-sync",
+                        "--disable-extensions",
+                        "--disable-background-networking",
+                        "--disable-component-update",
+                        "--no-sandbox",
+                    ],
+                )
+            except Exception:
+                # Chrome 未安装则回退 Chromium（仅能解密 v10）
+                context = p.chromium.launch_persistent_context(
+                    tmp_dir,
+                    headless=True,
+                    args=["--no-first-run", "--disable-sync", "--no-sandbox"],
+                )
+
+            cookies_list = context.cookies(query_urls)
             context.close()
-        else:
-            browser.close()
 
-    return result
+        return {c["name"]: c["value"] for c in cookies_list if c["name"] in TARGET_COOKIES}
+
+    finally:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
@@ -349,15 +375,16 @@ def read_localstorage(user_data_path: str, profile: str = "Default") -> dict | N
         except (PermissionError, OSError):
             continue
 
+        # LevelDB .log 文件是追加写：同一 key 可能出现多次，最后一次才是最新值。
+        # 扫描文件内所有出现位置，保留最后一个成功解析的 JSON。
+        last_obj = None
         idx = data.find(target)
         while idx != -1:
-            # 在 key 出现位置之后寻找 JSON 值
             search_start = idx + len(target)
             search_end = min(search_start + 500, len(data))
             json_idx = data.find(json_pattern, search_start, search_end)
 
             if json_idx != -1:
-                # 提取 JSON 字符串
                 depth = 0
                 end = json_idx
                 for j in range(json_idx, min(json_idx + 5000, len(data))):
@@ -371,17 +398,18 @@ def read_localstorage(user_data_path: str, profile: str = "Default") -> dict | N
                             break
 
                 raw = data[json_idx:end]
-                # 清理可能的非 ASCII 干扰字节
                 try:
                     obj = json.loads(raw.decode("utf-8", errors="ignore"))
-                    # 解码 base36
                     if "value" in obj and obj["value"] != "_":
                         obj["value_decoded"] = _de_cookie_schedule(obj["value"])
-                    return obj
+                    last_obj = obj          # 继续扫描，找更新的值
                 except json.JSONDecodeError:
                     pass
 
             idx = data.find(target, idx + 1)
+
+        if last_obj is not None:
+            return last_obj                 # 返回该文件内最新的一条
 
     return None
 
@@ -578,7 +606,7 @@ def print_result(result: dict, browser_label: str = "Browser"):
         preview = ", ".join(hidden[:20])
         if len(hidden) > 20:
             preview += f" ... (共 {len(hidden)} 场)"
-        print(f"  显示的比赛ID ({len(hidden)} 场): {preview}")
+        print(f"  隐藏的比赛ID ({len(hidden)} 场): {preview}")
         if result["raw_localstorage"] and "expiry" in result["raw_localstorage"]:
             from datetime import datetime
             exp = datetime.fromtimestamp(result["raw_localstorage"]["expiry"] / 1000)
@@ -596,6 +624,60 @@ def print_result(result: dict, browser_label: str = "Browser"):
         print("  无置顶比赛")
 
     print()
+
+
+# ---------------------------------------------------------------------------
+#  诊断：查看目标 Cookie 实际存储的域名
+# ---------------------------------------------------------------------------
+
+def _diagnose_cookies(user_data_path: str, profile: str = "Default"):
+    """不过滤域名，列出所有匹配目标 Cookie 名的记录及其 host_key."""
+    profile_dir = os.path.join(user_data_path, profile)
+    cookies_db = os.path.join(profile_dir, "Network", "Cookies")
+    if not os.path.exists(cookies_db):
+        cookies_db = os.path.join(profile_dir, "Cookies")
+    if not os.path.exists(cookies_db):
+        print("错误: 未找到 Cookies 数据库")
+        return
+
+    tmp = tempfile.mktemp(suffix=".db")
+    try:
+        _copy_locked_file(cookies_db, tmp)
+        conn = sqlite3.connect(tmp)
+    except Exception as e:
+        print(f"复制 Cookies 文件失败: {e}")
+        return
+
+    aes_key = _get_chrome_aes_key(user_data_path)
+    cur = conn.cursor()
+
+    print(f"\n{'=' * 60}")
+    print(f"  诊断模式 — 目标 Cookie 实际存储位置")
+    print(f"{'=' * 60}")
+
+    for name in TARGET_COOKIES:
+        cur.execute(
+            "SELECT host_key, value, encrypted_value, expires_utc "
+            "FROM cookies WHERE name = ?",
+            (name,),
+        )
+        rows = cur.fetchall()
+        print(f"\n  Cookie: {name}")
+        if not rows:
+            print(f"    [未找到] — Chrome 中不存在此 Cookie")
+        else:
+            for host_key, plain, encrypted, expires_utc in rows:
+                decrypted = plain or _decrypt_value(encrypted, aes_key)
+                preview = decrypted[:60] + "..." if len(decrypted) > 60 else decrypted
+                print(f"    host_key : {host_key}")
+                print(f"    value    : {preview}")
+                print(f"    expires  : {expires_utc}")
+
+    conn.close()
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -619,6 +701,10 @@ def main():
     parser.add_argument(
         "--json", action="store_true",
         help="以 JSON 格式输出",
+    )
+    parser.add_argument(
+        "--diagnose", action="store_true",
+        help="诊断模式：不过滤域名，列出所有匹配目标名称的 Cookie 及其 host_key",
     )
     args = parser.parse_args()
 
@@ -660,6 +746,10 @@ def main():
             print(f"  (可通过 --profile 指定, --list-profiles 查看所有)")
 
     print(f"[{browser_label}] 读取 Profile: {profile}")
+
+    if args.diagnose:
+        _diagnose_cookies(user_data_path, profile)
+        return
 
     try:
         result = read_filter(user_data_path, profile)
