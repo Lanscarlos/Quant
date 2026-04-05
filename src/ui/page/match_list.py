@@ -5,6 +5,9 @@ Displays historical match data with odds analysis panels.
 External API:
   render(on_match_click) — registered with the Router
 """
+import asyncio
+import random
+
 from nicegui import ui, run
 
 from src.db import get_conn
@@ -140,6 +143,7 @@ def _render_odds_panel(system_name: str):
 def render(on_match_click: callable = None):
     cached_rows: list = [[]]
     filter_ids: list = [get_filtered_match_ids()]
+    is_loading: list = [False]
 
     with ui.column().classes('w-full h-full gap-0'):
 
@@ -149,7 +153,6 @@ def render(on_match_click: callable = None):
         ):
             ui.icon('history').classes('text-xl text-blue-600')
             ui.label('历史数据').classes('text-base font-bold text-slate-700 flex-1')
-            spinner   = ui.spinner(size='sm').classes('hidden')
             err_label = ui.label('').classes('text-xs text-red-500')
 
         # ── 操作按钮行 ────────────────────────────────────────────────
@@ -179,6 +182,14 @@ def render(on_match_click: callable = None):
                 ):
                     @ui.refreshable
                     def data_table():
+                        if is_loading[0]:
+                            with ui.row().classes(
+                                'w-full items-center justify-center gap-3 py-16'
+                            ):
+                                ui.spinner('dots', size='lg', color='blue-6')
+                                ui.label('正在加载...').classes('text-sm text-slate-400')
+                            return
+
                         rows = cached_rows[0]
                         if not rows:
                             with ui.row().classes(
@@ -219,18 +230,30 @@ def render(on_match_click: callable = None):
 
     async def _on_fetch():
         err_label.set_text('')
-        spinner.classes(remove='hidden')
+        is_loading[0] = True
+        data_table.refresh()
         try:
             await run.io_bound(fetch_match_list)
+            is_loading[0] = False
             _reload()
         except Exception as exc:
+            is_loading[0] = False
+            data_table.refresh()
             err_label.set_text(f'抓取失败：{exc}')
-        finally:
-            spinner.classes(add='hidden')
 
-    def _on_refresh():
-        filter_ids[0] = get_filtered_match_ids()
-        _reload()
+    async def _on_refresh():
+        refresh_btn.props(add='loading disable')
+        is_loading[0] = True
+        data_table.refresh()
+        try:
+            filter_ids[0] = await run.io_bound(get_filtered_match_ids)
+            is_loading[0] = False
+            _reload()
+        except Exception:
+            is_loading[0] = False
+            data_table.refresh()
+        finally:
+            refresh_btn.props(remove='loading disable')
 
     recent10_btn.on_click(lambda: ui.notify('近十场分析数据功能待实现', type='info'))
     time_btn.on_click(lambda: ui.notify('按时间检索功能待实现', type='info'))
