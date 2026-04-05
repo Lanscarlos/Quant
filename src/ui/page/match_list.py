@@ -246,7 +246,10 @@ def render(on_match_click: callable = None):
         is_loading[0] = True
         data_table.refresh()
         try:
-            filter_ids[0] = await run.io_bound(get_filtered_match_ids)
+            filter_ids[0], _ = await asyncio.gather(
+                run.io_bound(get_filtered_match_ids),
+                asyncio.sleep(random.uniform(0.5, 2.0)),
+            )
             is_loading[0] = False
             _reload()
         except Exception:
