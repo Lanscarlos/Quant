@@ -9,6 +9,7 @@ from nicegui import ui, run
 
 from src.db import get_conn
 from src.service.match_list import fetch_match_list
+from src.service.browser_filter import get_filtered_match_ids
 from src.sync.coordinator import should_fetch_match_list
 
 _WH_COMPANY_ID = 115  # William Hill
@@ -35,27 +36,31 @@ def _f(v) -> str:
     return f"{v:.2f}" if v is not None else '-'
 
 
-def _query_history(limit: int = 50) -> list[dict]:
+def _query_filtered(ids: list) -> list[dict]:
     conn = get_conn()
-    rows = conn.execute("""
-        SELECT
-            m.schedule_id,
-            m.match_time,
-            COALESCE(ht.team_name_cn, '') AS home_team,
-            COALESCE(at.team_name_cn, '') AS away_team,
-            COALESCE(l.league_name_cn, m.league_abbr, '') AS league,
-            o.open_win,  o.open_draw,  o.open_lose,
-            o.cur_win,   o.cur_draw,   o.cur_lose,
-            m.home_score, m.away_score
-        FROM matches m
-        LEFT JOIN teams   ht ON m.home_team_id = ht.team_id
-        LEFT JOIN teams   at ON m.away_team_id = at.team_id
-        LEFT JOIN leagues l  ON m.league_abbr  = l.league_abbr
-        LEFT JOIN match_odds o
-               ON o.schedule_id = m.schedule_id AND o.company_id = ?
-        ORDER BY m.match_time DESC
-        LIMIT ?
-    """, (_WH_COMPANY_ID, limit)).fetchall()
+    if ids:
+        placeholders = ",".join("?" * len(ids))
+        rows = conn.execute(f"""
+            SELECT
+                m.schedule_id,
+                m.match_time,
+                COALESCE(ht.team_name_cn, '') AS home_team,
+                COALESCE(at.team_name_cn, '') AS away_team,
+                COALESCE(l.league_name_cn, m.league_abbr, '') AS league,
+                o.open_win,  o.open_draw,  o.open_lose,
+                o.cur_win,   o.cur_draw,   o.cur_lose,
+                m.home_score, m.away_score
+            FROM matches m
+            LEFT JOIN teams   ht ON m.home_team_id = ht.team_id
+            LEFT JOIN teams   at ON m.away_team_id = at.team_id
+            LEFT JOIN leagues l  ON m.league_abbr  = l.league_abbr
+            LEFT JOIN match_odds o
+                   ON o.schedule_id = m.schedule_id AND o.company_id = ?
+            WHERE CAST(m.schedule_id AS TEXT) IN ({placeholders})
+            ORDER BY m.match_time DESC
+        """, (_WH_COMPANY_ID, *ids)).fetchall()
+    else:
+        rows = []
 
     result = []
     for i, r in enumerate(rows, 1):
@@ -134,7 +139,7 @@ def _render_odds_panel(system_name: str):
 
 def render(on_match_click: callable = None):
     cached_rows: list = [[]]
-    limit_state: list = [50]
+    filter_ids: list = [get_filtered_match_ids()]
 
     with ui.column().classes('w-full h-full gap-0'):
 
@@ -162,6 +167,7 @@ def render(on_match_click: callable = None):
             save_btn       = ui.button('保存',          icon='save')          .props('outline size=sm')
             home_btn       = ui.button('返回主界面',    icon='home')          .props('outline size=sm')
             exit_btn       = ui.button('退出',          icon='exit_to_app')   .props('outline size=sm')
+            refresh_btn    = ui.button('刷新',          icon='refresh')       .props('outline size=sm')
 
         # ── 主内容区 ──────────────────────────────────────────────────
         with ui.scroll_area().classes('w-full flex-1'):
@@ -207,10 +213,8 @@ def render(on_match_click: callable = None):
 
     # ── 事件绑定 ──────────────────────────────────────────────────────
 
-    def _reload(limit: int | None = None):
-        if limit is not None:
-            limit_state[0] = limit
-        cached_rows[0] = _query_history(limit_state[0])
+    def _reload():
+        cached_rows[0] = _query_filtered(filter_ids[0])
         data_table.refresh()
 
     async def _on_fetch():
@@ -224,7 +228,11 @@ def render(on_match_click: callable = None):
         finally:
             spinner.classes(add='hidden')
 
-    recent10_btn.on_click(lambda: _reload(10))
+    def _on_refresh():
+        filter_ids[0] = get_filtered_match_ids()
+        _reload()
+
+    recent10_btn.on_click(lambda: ui.notify('近十场分析数据功能待实现', type='info'))
     time_btn.on_click(lambda: ui.notify('按时间检索功能待实现', type='info'))
     league_btn.on_click(lambda: ui.notify('按联赛检索功能待实现', type='info'))
     team_btn.on_click(lambda: ui.notify('按球队检索功能待实现', type='info'))
@@ -234,6 +242,7 @@ def render(on_match_click: callable = None):
     save_btn.on_click(lambda: ui.notify('保存功能待实现', type='info'))
     home_btn.on_click(lambda: ui.notify('已在主界面', type='info'))
     exit_btn.on_click(lambda: ui.notify('退出功能待实现', type='info'))
+    refresh_btn.on_click(_on_refresh)
 
     # 初始加载 + 自动抓取
     _reload()

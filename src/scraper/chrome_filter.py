@@ -5,7 +5,7 @@
   - Cookie  win007BfCookie              → 全局配置 (热门/完整、语言、样式等)
   - Cookie  FS007Filter                 → 赛事筛选条件 (联赛ID列表、比赛状态)
   - Cookie  Bet007live_concernId_AllDomain → 置顶比赛ID
-  - localStorage  Bet007live_hiddenID   → 隐藏比赛ID列表
+  - localStorage  Bet007live_hiddenID   → 筛选比赛ID列表（白名单：选中要看的比赛，其余隐藏）
 
 依赖:
   pip install pywin32 cryptography
@@ -462,7 +462,7 @@ def parse_fs_filter(raw: str) -> dict:
 
 
 def parse_hidden_ids(ls_data: dict) -> list[str]:
-    """从 localStorage 数据中提取隐藏的比赛 ID 列表."""
+    """从 localStorage 数据中提取筛选的比赛 ID 列表（白名单，只显示这些比赛）."""
     value = ls_data.get("value_decoded") or ls_data.get("value", "_")
     return [x for x in value.split("_") if x]
 
@@ -598,15 +598,15 @@ def print_result(result: dict, browser_label: str = "Browser"):
     else:
         print("\n[筛选条件] 未找到 FS007Filter (可能已过期重置)")
 
-    # 3) 隐藏比赛
+    # 3) 筛选比赛（白名单：只显示这些，其余隐藏）
     hidden = result["hidden_ids"]
-    print(f"\n[隐藏比赛] localStorage Bet007live_hiddenID")
+    print(f"\n[筛选比赛] localStorage Bet007live_hiddenID")
     print(SEP)
     if hidden:
         preview = ", ".join(hidden[:20])
         if len(hidden) > 20:
             preview += f" ... (共 {len(hidden)} 场)"
-        print(f"  隐藏的比赛ID ({len(hidden)} 场): {preview}")
+        print(f"  筛选的比赛ID ({len(hidden)} 场): {preview}")
         if result["raw_localstorage"] and "expiry" in result["raw_localstorage"]:
             from datetime import datetime
             exp = datetime.fromtimestamp(result["raw_localstorage"]["expiry"] / 1000)
