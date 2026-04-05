@@ -3,6 +3,7 @@ from src.ui.router import Router
 
 NAV_ITEMS = [
     ('match_list', 'sports_soccer', '赛事列表'),
+    ('analysis',   'query_stats',   '数据分析'),
     ('info',       'info',          '关于'),
 ]
 

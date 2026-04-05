@@ -490,7 +490,7 @@ function SortData() {
         temp = new Array();
         Config.concernCount = 0;
         var j = 1;
-        /*temp[0] = ",";*/
+        /*archived[0] = ",";*/
         var tempCount = matchcount;
         if (Config.sclassType == 0) {//初始化数组
             A.splice(0, A.length);
@@ -507,7 +507,7 @@ function SortData() {
             }
         }
         if (temp.length > 1) {//合并临时置顶数组和普通数据数组
-            //document.getElementById("concernCount").innerHTML = temp.length - 1;
+            //document.getElementById("concernCount").innerHTML = archived.length - 1;
             if (Config.sclassType != 0) {//按竞彩足彩单场排序
                 temp.sort(sclassSort(index));
                 var d = temp.pop();

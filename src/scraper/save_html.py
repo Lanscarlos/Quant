@@ -10,7 +10,7 @@ response = requests.get(url, headers=headers)
 response.encoding = "utf-8"  # 防止乱码
 
 # 保存到文件
-with open("../../.temp/oddsHistory.html", "w", encoding="utf-8") as f:
+with open("../../.archived/oddsHistory.html", "w", encoding="utf-8") as f:
     f.write(response.text)
 
 print("状态码:", response.status_code)

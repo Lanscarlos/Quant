@@ -225,9 +225,9 @@ function addMoreConcern(num) {
 //            for (var i = 1; i <= matchcount; i++) {
 //                if (concernId.indexOf("_" + A[i][0] + "_") == -1) {
 //                    if (parseInt(A[i][index]) > parseInt(A[matchIndex][index])) {
-//                        var temp = parseInt(A[i][index]) - parseInt(A[matchIndex][index]);
-//                        if (temp < minDiff) {
-//                            minDiff = temp;
+//                        var archived = parseInt(A[i][index]) - parseInt(A[matchIndex][index]);
+//                        if (archived < minDiff) {
+//                            minDiff = archived;
 //                            tempIndex = i;
 //                        }
 //                    }

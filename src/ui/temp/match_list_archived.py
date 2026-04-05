@@ -4,7 +4,7 @@ from datetime import datetime, date
 from nicegui import ui, run
 
 from src.db import get_conn
-from src.service.match_list import fetch_match_list
+from src.service.archived.match_list import fetch_match_list
 from src.sync.coordinator import should_fetch_match_list
 
 _PAGE_SIZE = 8   # 每页显示的联赛数
