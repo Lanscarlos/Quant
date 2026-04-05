@@ -6,17 +6,16 @@ External API:
 """
 from nicegui import ui, run
 
-from src.db import get_conn
 from src.service.archived.match_detail import fetch_match_detail
 from src.service.archived.match_odds_list import fetch_match_odds_list
 from src.service.archived.match_asian_handicap_list import fetch_match_asian_handicap_list
 
 # 复用 match_detail 的私有查询 / 渲染工具
-from src.ui.page.match_detail import (
+from src.ui.temp.match_detail import (
     _query_match, _query_h2h, _query_header_extras, _query_odds,
     _render_h2h_section, _render_odds_section,
-    _no_data_hint, _wdl_badges,
-    _f, _d,
+    _wdl_badges,
+    _d,
 )
 
 # ── 步骤定义 ──────────────────────────────────────────────────────────────────
