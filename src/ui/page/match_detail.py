@@ -524,25 +524,43 @@ def render(on_back: callable = None):
     with ui.column().classes('w-full h-full gap-0'):
 
         # ── 顶部工具栏 ────────────────────────────────────────────────
-        with ui.row().classes('w-full items-center gap-2 px-4 py-3 bg-white border-b border-slate-200'):
-            back_btn = ui.button(icon='arrow_back') \
-                .props('unelevated round size=sm') \
-                .classes('!bg-slate-100 !text-slate-500')
-            if on_back:
-                back_btn.on_click(on_back)
-            ui.icon('analytics').classes('text-xl text-blue-600')
-            title_label  = ui.label('比赛详情') \
-                .classes('text-base font-bold text-slate-700 truncate')
-            league_label = ui.label('') \
-                .classes('text-xs text-blue-600 bg-blue-50 px-2 py-0.5 '
-                         'rounded border border-blue-100 flex-shrink-0')
-            time_label   = ui.label('') \
-                .classes('text-xs text-slate-400 flex-shrink-0 flex-1')
-            spinner   = ui.spinner(size='sm').classes('hidden')
-            err_label = ui.label('').classes('text-xs text-red-500')
-            fetch_btn = ui.button('抓取数据', icon='download') \
-                .props('unelevated size=sm') \
-                .classes('!bg-blue-600 !text-white')
+        with ui.column().classes('w-full gap-0 bg-white border-b border-slate-200'):
+            # 标题行
+            with ui.row().classes('w-full items-center gap-2 px-4 py-2'):
+                back_btn = ui.button(icon='arrow_back') \
+                    .props('unelevated round size=sm') \
+                    .classes('!bg-slate-100 !text-slate-500')
+                if on_back:
+                    back_btn.on_click(on_back)
+                ui.icon('analytics').classes('text-xl text-blue-600')
+                title_label  = ui.label('比赛详情') \
+                    .classes('text-base font-bold text-slate-700 truncate flex-1')
+                league_label = ui.label('') \
+                    .classes('text-xs text-blue-600 bg-blue-50 px-2 py-0.5 '
+                             'rounded border border-blue-100 flex-shrink-0')
+                time_label   = ui.label('') \
+                    .classes('text-xs text-slate-400 flex-shrink-0')
+                spinner   = ui.spinner(size='sm').classes('hidden')
+                err_label = ui.label('').classes('text-xs text-red-500')
+            # 操作按钮行
+            with ui.row().classes('w-full items-center gap-2 px-4 py-2 bg-slate-50 border-t border-slate-100 flex-wrap'):
+                fetch_btn_1      = ui.button('抓取数据1',   icon='download')    .props('outline size=sm')
+                fetch_btn_2      = ui.button('抓取数据2',   icon='bar_chart')   .props('outline size=sm')
+                init_btn         = ui.button('数据分析初始', icon='restart_alt') .props('outline size=sm')
+                save_btn         = ui.button('结果保存',    icon='save')         .props('outline size=sm')
+                history_load_btn = ui.button('历史数据加载', icon='history')     .props('outline size=sm')
+                history_page_btn = ui.button('历史数据页面', icon='table_chart') .props('outline size=sm')
+                export_img_btn   = ui.button('另存为图片',  icon='image')        .props('outline size=sm')
+                print_btn        = ui.button('分析结果打印', icon='print')       .props('outline size=sm')
+                exit_btn         = ui.button('退出',        icon='exit_to_app')  .props('outline size=sm')
+
+        def _disable_fetch():
+            for b in (fetch_btn_1, fetch_btn_2, history_load_btn):
+                b.disable()
+
+        def _enable_fetch():
+            for b in (fetch_btn_1, fetch_btn_2, history_load_btn):
+                b.enable()
 
         # ── 内容区域 ──────────────────────────────────────────────────
         with ui.scroll_area().classes('w-full flex-1'):
@@ -600,7 +618,7 @@ def render(on_back: callable = None):
                             _state['auto_fetched'] = True
                             return
                         spinner.classes(remove='hidden')
-                        fetch_btn.disable()
+                        _disable_fetch()
                         _state['fetching'] = True
                         _state['sections'] = None
                         detail_content.refresh()
@@ -623,40 +641,76 @@ def render(on_back: callable = None):
                         finally:
                             _state['fetching'] = False
                             spinner.classes(add='hidden')
-                            fetch_btn.enable()
+                            _enable_fetch()
 
                     ui.timer(0, _auto_fetch, once=True)
 
             _refresh_fn[0] = detail_content.refresh
             detail_content()
 
-    # ── 手动抓取 ──────────────────────────────────────────────────────
-    async def _on_fetch():
+    # ── 按钮操作处理 ──────────────────────────────────────────────────
+
+    async def _run_fetch(coro_factories: list, label: str = '抓取'):
+        """通用抓取流程：显示 spinner、禁用按钮、执行协程、刷新内容。"""
         mid = _state.get('match_id')
         if not mid:
             return
         err_label.set_text('')
         spinner.classes(remove='hidden')
-        fetch_btn.disable()
+        _disable_fetch()
         prev_sections = _state['sections']
         _state['fetching'] = True
         _state['sections'] = None
         detail_content.refresh()
         try:
-            await asyncio.gather(
-                run.io_bound(fetch_match_detail, mid),
-                run.io_bound(fetch_match_odds_list, mid),
-            )
-            await run.io_bound(_fetch_recent_odds, mid)
+            if len(coro_factories) > 1:
+                await asyncio.gather(*[f() for f in coro_factories])
+            else:
+                await coro_factories[0]()
             _state['sections'] = await run.io_bound(_query_all_sections, mid)
             detail_content.refresh()
         except Exception as exc:
-            err_label.set_text(f'抓取失败：{exc}')
+            err_label.set_text(f'{label}失败：{exc}')
             _state['sections'] = prev_sections
             detail_content.refresh()
         finally:
             _state['fetching'] = False
             spinner.classes(add='hidden')
-            fetch_btn.enable()
+            _enable_fetch()
 
-    fetch_btn.on_click(_on_fetch)
+    # 抓取数据1：赛事详情（联赛数据）
+    async def _on_fetch_detail():
+        mid = _state.get('match_id')
+        if mid:
+            await _run_fetch([lambda: run.io_bound(fetch_match_detail, mid)], '抓取数据1')
+
+    # 抓取数据2：欧赔快照
+    async def _on_fetch_odds():
+        mid = _state.get('match_id')
+        if mid:
+            await _run_fetch([lambda: run.io_bound(fetch_match_odds_list, mid)], '抓取数据2')
+
+    # 数据分析初始：清空已加载数据，重新触发自动加载
+    def _on_init():
+        _state['sections'] = None
+        _state['auto_fetched'] = False
+        _state['fetching'] = False
+        err_label.set_text('')
+        detail_content.refresh()
+
+    # 历史数据加载：补抓近期历史赛事欧赔及赔率历史
+    async def _on_load_history():
+        mid = _state.get('match_id')
+        if mid:
+            await _run_fetch([lambda: run.io_bound(_fetch_recent_odds, mid)], '历史数据加载')
+
+    fetch_btn_1.on_click(_on_fetch_detail)
+    fetch_btn_2.on_click(_on_fetch_odds)
+    init_btn.on_click(_on_init)
+    save_btn.on_click(lambda: ui.notify('结果保存功能待实现', type='info'))
+    history_load_btn.on_click(_on_load_history)
+    history_page_btn.on_click(lambda: ui.notify('历史数据页面功能待实现', type='info'))
+    export_img_btn.on_click(lambda: ui.notify('另存为图片功能待实现', type='info'))
+    print_btn.on_click(lambda: ui.notify('打印功能待实现', type='info'))
+    if on_back:
+        exit_btn.on_click(on_back)
