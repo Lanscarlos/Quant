@@ -6,12 +6,20 @@ External API:
 """
 from nicegui import ui, run
 
+from src.db import get_conn
 from src.service.archived.match_detail import fetch_match_detail
 from src.service.archived.match_odds_list import fetch_match_odds_list
 from src.service.archived.match_asian_handicap_list import fetch_match_asian_handicap_list
 
+# 复用 match_detail 的私有查询 / 渲染工具
+from src.ui.page.match_detail import (
+    _query_match, _query_h2h, _query_header_extras, _query_odds,
+    _render_h2h_section, _render_odds_section,
+    _no_data_hint, _wdl_badges,
+    _f, _d,
+)
+
 # ── 步骤定义 ──────────────────────────────────────────────────────────────────
-# (key, material-icon, 显示标题)
 _STEPS = [
     ('match_detail', 'search',        '赛事信息 & 联赛比分'),
     ('h2h',          'people',        '两队交手数据'),
@@ -43,12 +51,13 @@ def render():
     state = {
         'running':  False,
         'abort':    False,
+        'mid':      None,
         'statuses': {k: 'pending' for k, _, _ in _STEPS},
         'messages': {k: ''        for k, _, _ in _STEPS},
     }
 
     def _reset():
-        state.update(running=False, abort=False)
+        state.update(running=False, abort=False, mid=None)
         state['statuses'] = {k: 'pending' for k, _, _ in _STEPS}
         state['messages'] = {k: ''        for k, _, _ in _STEPS}
 
@@ -76,7 +85,6 @@ def render():
             for key, icon, label in _STEPS:
                 with ui.step(key, title=label, icon=icon):
 
-                    # 每个 step 的状态显示区域（独立 refreshable，互不影响）
                     def _make_status(k: str):
                         @ui.refreshable
                         def _status():
@@ -91,11 +99,113 @@ def render():
 
                     refresh_fns[key] = _make_status(key)
 
+                    # 结论步骤：独立的 refreshable 区域
                     if key == 'conclusion':
                         ui.separator().classes('my-2')
-                        ui.label('结论内容待填充').classes('text-gray-400 text-sm')
 
-    # ── 业务逻辑 ──────────────────────────────────────────────────────────────
+                        @ui.refreshable
+                        def conclusion_body():
+                            mid = state['mid']
+                            if not mid:
+                                with ui.row().classes('items-center gap-2 py-4 text-gray-400'):
+                                    ui.icon('info_outline').classes('text-base')
+                                    ui.label('完成抓取后自动展示结论').classes('text-sm')
+                                return
+
+                            match   = _query_match(mid)
+                            if not match:
+                                ui.label('未找到赛事数据').classes('text-sm text-slate-400')
+                                return
+
+                            extras = _query_header_extras(mid)
+                            h2h    = _query_h2h(mid)
+                            odds   = _query_odds(mid)
+
+                            with ui.column().classes('w-full gap-0'):
+
+                                # ── 赛事头部 ─────────────────────────────────
+                                with ui.row().classes('w-full items-center py-2'):
+                                    # 主队
+                                    with ui.column().classes('flex-1 gap-0'):
+                                        ui.label(match['home_team']).classes(
+                                            'text-lg font-bold text-blue-700'
+                                        )
+                                        with ui.row().classes('items-center gap-3'):
+                                            with ui.row().classes('items-center gap-1'):
+                                                ui.label('排名').classes('text-xs text-slate-400')
+                                                ui.label(_d(match['home_rank'])).classes(
+                                                    'text-xs font-bold text-slate-600'
+                                                )
+                                            with ui.row().classes('items-center gap-1'):
+                                                ui.label('积分').classes('text-xs text-slate-400')
+                                                ui.label(_d(extras.get('home_pts'))).classes(
+                                                    'text-xs font-bold text-slate-600'
+                                                )
+                                            if extras.get('home_wdl'):
+                                                _wdl_badges(*extras['home_wdl'])
+
+                                    # 比分 / 时间 / 联赛
+                                    with ui.column().classes('px-4 items-center gap-0 flex-shrink-0'):
+                                        hs, as_ = match['home_score'], match['away_score']
+                                        if hs is not None:
+                                            ui.label(f'{hs}  :  {as_}').classes(
+                                                'text-2xl font-bold text-slate-800'
+                                            )
+                                            hhs, ahs = match['home_half_score'], match['away_half_score']
+                                            if hhs is not None:
+                                                ui.label(f'半场 {hhs}:{ahs}').classes(
+                                                    'text-xs text-slate-400'
+                                                )
+                                        else:
+                                            ui.label('VS').classes('text-2xl font-bold text-slate-300')
+                                        ui.label(match['match_time'] or '').classes(
+                                            'text-xs text-slate-400 mt-1'
+                                        )
+                                        ui.label(match['league']).classes('text-xs text-slate-500')
+
+                                    # 客队
+                                    with ui.column().classes('flex-1 items-end gap-0'):
+                                        ui.label(match['away_team']).classes(
+                                            'text-lg font-bold text-red-600 text-right'
+                                        )
+                                        with ui.row().classes('items-center gap-3'):
+                                            if extras.get('away_wdl'):
+                                                _wdl_badges(*extras['away_wdl'])
+                                            with ui.row().classes('items-center gap-1'):
+                                                ui.label('积分').classes('text-xs text-slate-400')
+                                                ui.label(_d(extras.get('away_pts'))).classes(
+                                                    'text-xs font-bold text-slate-600'
+                                                )
+                                            with ui.row().classes('items-center gap-1'):
+                                                ui.label('排名').classes('text-xs text-slate-400')
+                                                ui.label(_d(match['away_rank'])).classes(
+                                                    'text-xs font-bold text-slate-600'
+                                                )
+
+                                ui.separator().classes('my-2')
+
+                                # ── 近六场交手 ───────────────────────────────
+                                with ui.row().classes(
+                                    'w-full gap-0 items-start border border-slate-200 rounded'
+                                ):
+                                    _render_h2h_section(h2h, fetched=True, border_right=False)
+
+                                ui.separator().classes('my-2')
+
+                                # ── 欧赔：威廉希尔 + 立博 ────────────────────
+                                with ui.row().classes(
+                                    'w-full gap-0 items-start border border-slate-200 rounded'
+                                ):
+                                    _render_odds_section(
+                                        odds, '威廉希尔', 'William Hill', border_right=True
+                                    )
+                                    _render_odds_section(
+                                        odds, '立博', 'Ladbrokes', border_right=False
+                                    )
+
+                        conclusion_body()
+
+    # ── 事件处理 ──────────────────────────────────────────────────────────────
 
     def _update(key: str, status: str, msg: str = '') -> None:
         state['statuses'][key] = status
@@ -103,7 +213,6 @@ def render():
         refresh_fns[key].refresh()
 
     async def _do_step(key: str, mid: str) -> None:
-        """执行单步数据抓取。"""
         if key == 'match_detail':
             await run.io_bound(fetch_match_detail, mid)
         elif key == 'h2h':
@@ -114,16 +223,17 @@ def render():
             await run.io_bound(fetch_match_asian_handicap_list, mid)
 
     async def _run_fetch() -> None:
-        mid = (match_input.value or '').strip()
-        if not mid:
+        mid_str = (match_input.value or '').strip()
+        if not mid_str:
             ui.notify('请输入赛事 ID', type='warning')
             return
 
-        # 初始化 UI 状态
         _reset()
         for k, _, _ in _STEPS:
             refresh_fns[k].refresh()
-        state['running'] = True
+        conclusion_body.refresh()
+
+        state.update(running=True, mid=int(mid_str))
         fetch_btn.disable()
         stop_btn.classes(remove='hidden')
         stepper.set_value('match_detail')
@@ -137,13 +247,14 @@ def render():
             _update(key, 'running')
 
             try:
-                await _do_step(key, mid)
+                await _do_step(key, mid_str)
                 _update(key, 'done')
             except Exception as exc:
                 _update(key, 'error', str(exc)[:80])
                 state['abort'] = True   # 出错后中断后续步骤
 
         stepper.set_value('conclusion')
+        conclusion_body.refresh()       # 展示抓取结果
         fetch_btn.enable()
         stop_btn.classes(add='hidden')
         state['running'] = False
