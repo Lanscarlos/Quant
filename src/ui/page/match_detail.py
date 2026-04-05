@@ -18,15 +18,17 @@ import datetime
 from nicegui import ui, run
 
 from src.db import get_conn
+from src.service.match_asian_handicap_list import fetch_match_asian_handicap_list
 from src.service.match_detail import fetch_match_detail, fetch_match_time
 from src.service.match_odds_history import fetch_odds_history
 from src.service.match_odds_list import fetch_match_odds_list
-from src.sync.coordinator import should_fetch_detail, should_fetch_odds
+from src.sync.coordinator import should_fetch_asian_odds, should_fetch_detail, should_fetch_odds
 
 _state: dict = {'match_id': None, 'sections': None, 'auto_fetched': False, 'fetching': False}
 _refresh_fn: list = [None]
 
-_WH_COMPANY_ID = 115  # William Hill
+_WH_COMPANY_ID   = 115  # William Hill
+_BET365_COMPANY_ID = 281  # Bet365
 
 
 def load(match_id: int | str) -> None:
@@ -279,12 +281,32 @@ def _fetch_recent_odds(mid: int) -> None:
                 pass
 
 
+def _query_asian_odds(mid: int) -> dict | None:
+    r = get_conn().execute("""
+        SELECT open_handicap, open_home, open_away,
+               cur_handicap,  cur_home,  cur_away
+        FROM match_asian_odds
+        WHERE schedule_id = ? AND company_id = ?
+    """, (mid, _BET365_COMPANY_ID)).fetchone()
+    if not r:
+        return None
+    return {
+        'open_handicap': r[0] or '-',
+        'open_home':     _f(r[1]),
+        'open_away':     _f(r[2]),
+        'cur_handicap':  r[3] or '-',
+        'cur_home':      _f(r[4]),
+        'cur_away':      _f(r[5]),
+    }
+
+
 def _query_all_sections(mid: int) -> dict:
     return {
-        'extras': _query_header_extras(mid),
-        'recent': _query_recent_matches(mid),
-        'h2h':    _query_h2h(mid),
-        'odds':   _query_odds(mid),
+        'extras':      _query_header_extras(mid),
+        'recent':      _query_recent_matches(mid),
+        'h2h':         _query_h2h(mid),
+        'odds':        _query_odds(mid),
+        'asian_odds':  _query_asian_odds(mid),
         'detail_fetched': get_conn().execute(
             "SELECT 1 FROM match_standings WHERE schedule_id = ? LIMIT 1", (mid,)
         ).fetchone() is not None,
@@ -394,10 +416,19 @@ def _render_odds_section(odds_rows: list[dict], label: str, company_key: str, bo
             _no_data_hint()
 
 
-def _render_asian_section():
+def _render_asian_section(asian_row: dict | None):
     with ui.column().classes('flex-1 p-2 gap-1 min-w-0'):
         ui.label('365亚盘').classes('text-xs font-semibold text-slate-600')
-        ui.table(columns=_ASIAN_COLS, rows=[]).classes('w-full text-xs').props('dense flat')
+        if asian_row:
+            table_rows = [
+                {'home': asian_row['open_home'], 'hc': asian_row['open_handicap'],
+                 'away': asian_row['open_away'], 'time': '-', 'data': '-'},
+                {'home': asian_row['cur_home'],  'hc': asian_row['cur_handicap'],
+                 'away': asian_row['cur_away'],  'time': '-', 'data': '-'},
+            ]
+            ui.table(columns=_ASIAN_COLS, rows=table_rows).classes('w-full text-xs').props('dense flat')
+        else:
+            _no_data_hint()
 
 
 def _render_skeleton_3col():
@@ -474,45 +505,45 @@ def render(on_back: callable = None):
                 with ui.column().classes('w-full gap-0 p-3'):
 
                     # ── 行1: 赛事头部 ──────────────────────────────────
-                    with ui.row().classes('w-full items-center gap-3'):
-                        # 主队
-                        with ui.row().classes('flex-1 items-center gap-2 min-w-0'):
-                            ui.label('主队').classes('text-xs text-slate-400 flex-shrink-0')
-                            ui.label(match['home_team']).classes(
-                                'text-lg font-bold text-blue-700 flex-1 truncate min-w-0'
-                            )
-                            ui.label('排名').classes('text-xs text-slate-400 flex-shrink-0')
-                            ui.label(_d(match['home_rank'])).classes(
-                                'text-xs font-bold text-slate-700 flex-shrink-0'
-                            )
-                            ui.label('积分').classes('text-xs text-slate-400 flex-shrink-0')
-                            ui.label(_d(extras.get('home_pts'))).classes(
-                                'text-xs font-bold text-slate-700 flex-shrink-0'
-                            )
+                    with ui.row().classes('w-full items-center'):
+                        # 主队：队名 flex-1 撑满，排名/积分钉在右侧
+                        with ui.row().classes('flex-[2] items-center min-w-0'):
+                            with ui.row().classes('flex-1 items-center gap-2 min-w-0'):
+                                ui.label('主队').classes('text-xs text-slate-400 flex-shrink-0')
+                                ui.label(match['home_team']).classes(
+                                    'text-xl font-bold text-blue-700 truncate min-w-0'
+                                )
+                            with ui.row().classes('items-center gap-3 flex-shrink-0 pl-4'):
+                                with ui.row().classes('items-center gap-1'):
+                                    ui.label('排名').classes('text-xs text-slate-400')
+                                    ui.label(_d(match['home_rank'])).classes('text-xs font-bold text-slate-700')
+                                with ui.row().classes('items-center gap-1'):
+                                    ui.label('积分').classes('text-xs text-slate-400')
+                                    ui.label(_d(extras.get('home_pts'))).classes('text-xs font-bold text-slate-700')
 
-                        # 比赛信息
-                        with ui.row().classes('items-center gap-2 flex-shrink-0'):
+                        # 中间：比赛类型 + 比赛时间（固定宽不参与 flex 拉伸）
+                        with ui.row().classes('items-center gap-2 flex-shrink-0 px-6'):
                             ui.label('比赛类型:').classes('text-xs text-slate-500 whitespace-nowrap')
-                            ui.input().props('dense outlined').classes('w-20 text-xs')
-                            ui.label('比赛时间:').classes('text-xs text-slate-500 whitespace-nowrap')
+                            ui.label(match['league']).classes('text-xs font-medium text-slate-700 whitespace-nowrap')
+                            ui.label('比赛时间:').classes('text-xs text-slate-500 whitespace-nowrap ml-3')
                             ui.label(match['match_time'] or '').classes(
                                 'text-xs text-slate-600 whitespace-nowrap'
                             )
 
-                        # 客队（镜像）
-                        with ui.row().classes('flex-1 items-center gap-2 justify-end min-w-0'):
-                            ui.label('积分').classes('text-xs text-slate-400 flex-shrink-0')
-                            ui.label(_d(extras.get('away_pts'))).classes(
-                                'text-xs font-bold text-slate-700 flex-shrink-0'
-                            )
-                            ui.label('排名').classes('text-xs text-slate-400 flex-shrink-0')
-                            ui.label(_d(match['away_rank'])).classes(
-                                'text-xs font-bold text-slate-700 flex-shrink-0'
-                            )
-                            ui.label(match['away_team']).classes(
-                                'text-lg font-bold text-red-600 flex-1 truncate text-right min-w-0'
-                            )
-                            ui.label('客队').classes('text-xs text-slate-400 flex-shrink-0')
+                        # 客队（镜像）：积分/排名钉在左侧，队名 flex-1 撑满靠右
+                        with ui.row().classes('flex-[2] items-center min-w-0'):
+                            with ui.row().classes('items-center gap-3 flex-shrink-0 pr-4'):
+                                with ui.row().classes('items-center gap-1'):
+                                    ui.label('积分').classes('text-xs text-slate-400')
+                                    ui.label(_d(extras.get('away_pts'))).classes('text-xs font-bold text-slate-700')
+                                with ui.row().classes('items-center gap-1'):
+                                    ui.label('排名').classes('text-xs text-slate-400')
+                                    ui.label(_d(match['away_rank'])).classes('text-xs font-bold text-slate-700')
+                            with ui.row().classes('flex-1 items-center gap-2 min-w-0 justify-end'):
+                                ui.label(match['away_team']).classes(
+                                    'text-xl font-bold text-red-600 truncate min-w-0 text-right'
+                                )
+                                ui.label('客队').classes('text-xs text-slate-400 flex-shrink-0')
 
                     ui.separator().classes('my-2')
 
@@ -537,7 +568,7 @@ def render(on_back: callable = None):
                     with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
                         _render_odds_section(odds, '威廉希尔', 'William Hill', border_right=True)
                         _render_odds_section(odds, '立博',     'Ladbrokes',    border_right=True)
-                        _render_asian_section()
+                        _render_asian_section(sections['asian_odds'] if sections else None)
 
                     ui.separator().classes('my-2')
 
@@ -563,7 +594,8 @@ def render(on_back: callable = None):
                         status = match['status']
                         need_detail = should_fetch_detail(mid, status=status)
                         need_odds   = should_fetch_odds(mid, status=status)
-                        if not (need_detail or need_odds):
+                        need_asian  = should_fetch_asian_odds(mid, status=status)
+                        if not (need_detail or need_odds or need_asian):
                             _state['auto_fetched'] = True
                             return
                         spinner.classes(remove='hidden')
@@ -577,6 +609,8 @@ def render(on_back: callable = None):
                                 coros.append(run.io_bound(fetch_match_detail, mid))
                             if need_odds:
                                 coros.append(run.io_bound(fetch_match_odds_list, mid))
+                            if need_asian:
+                                coros.append(run.io_bound(fetch_match_asian_handicap_list, mid))
                             if coros:
                                 await asyncio.gather(*coros)
                             await run.io_bound(_fetch_recent_odds, mid)

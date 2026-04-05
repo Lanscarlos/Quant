@@ -85,6 +85,25 @@ def should_fetch_odds(schedule_id: int, *, status: int | None = None) -> bool:
     return _is_stale(row[0] if row else None, threshold)
 
 
+# ── match_asian_odds ──────────────────────────────────────────────────────────
+
+def should_fetch_asian_odds(schedule_id: int, *, status: int | None = None) -> bool:
+    """True → 调用 fetch_match_asian_handicap_list()；False → 直接读 DB。"""
+    conn = get_conn()
+    if status is None:
+        status = _match_status(schedule_id)
+    if status == -1:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM match_asian_odds WHERE schedule_id = ?", (schedule_id,)
+        ).fetchone()[0]
+        return count == 0
+    row = conn.execute(
+        "SELECT MIN(fetched_at) FROM match_asian_odds WHERE schedule_id = ?", (schedule_id,)
+    ).fetchone()
+    threshold = _ODDS_THRESHOLDS.get(status, _ODDS_STALE_DEFAULT)
+    return _is_stale(row[0] if row else None, threshold)
+
+
 # ── odds_history ──────────────────────────────────────────────────────────────
 
 def should_fetch_history(record_id: int, schedule_id: int) -> bool:
