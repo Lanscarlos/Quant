@@ -1,7 +1,8 @@
 from nicegui import ui
 from src.ui.frame import navigation_bar
 from src.ui.panel import home, info
-from src.ui.page import dashboard, match_list, match_detail, analysis
+from src.ui.page import dashboard, match_list
+from src.ui.page.detail import match_detail, analysis
 from src.ui.router import Router
 
 PORT = 19193
