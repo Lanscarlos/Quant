@@ -1,37 +1,48 @@
 """
-抓取数据页 — 用户手动输入赛事 URL 或 ID，步进抓取数据.
+抓取数据页 — 用户手动输入赛事 URL 或 ID，分阶段并行抓取数据.
+
+改进点:
+  - 同一 HTML 只请求一次 (步骤 1 合并排名/近期/交手)
+  - 同阶段步骤并行执行 (欧赔 & 亚盘、两个历史)
+  - 错误隔离: 非依赖步骤失败不影响其他步骤
+  - 新鲜度检查: 数据仍然新鲜时自动跳过
+  - 步骤间通过 ctx 传递数据 (record_ids, match_year)
 
 External API:
   render() — registered with the Router, returns trigger(mid) callback
 """
+import asyncio
 import re
 
 from nicegui import ui
 
-from .steps import STEPS
+from .steps import STEPS, PHASES
 
 _STATUS_ICON = {
-    'pending': ('radio_button_unchecked', 'text-gray-300'),
-    'running': ('hourglass_top',          'text-blue-500'),
-    'done':    ('check_circle',           'text-green-500'),
-    'error':   ('cancel',                 'text-red-500'),
-    'stopped': ('do_not_disturb_on',      'text-orange-400'),
+    'pending':  ('radio_button_unchecked', 'text-gray-300'),
+    'running':  ('hourglass_top',          'text-blue-500'),
+    'done':     ('check_circle',           'text-green-500'),
+    'skipped':  ('check_circle',           'text-slate-400'),
+    'error':    ('cancel',                 'text-red-500'),
+    'stopped':  ('do_not_disturb_on',      'text-orange-400'),
 }
 
 _STATUS_LABEL = {
-    'pending': '等待中',
-    'running': '抓取中…',
-    'done':    '完成',
-    'error':   '出错',
-    'stopped': '已中断',
+    'pending':  '等待中',
+    'running':  '抓取中…',
+    'done':     '完成',
+    'skipped':  '已跳过',
+    'error':    '出错',
+    'stopped':  '已中断',
 }
 
 _CIRCLE_CLS = {
-    'pending': 'bg-slate-100 text-slate-400',
-    'running': 'bg-blue-100  text-blue-600',
-    'done':    'bg-green-100 text-green-600',
-    'error':   'bg-red-100   text-red-600',
-    'stopped': 'bg-orange-100 text-orange-500',
+    'pending':  'bg-slate-100 text-slate-400',
+    'running':  'bg-blue-100  text-blue-600',
+    'done':     'bg-green-100 text-green-600',
+    'skipped':  'bg-slate-100 text-slate-500',
+    'error':    'bg-red-100   text-red-600',
+    'stopped':  'bg-orange-100 text-orange-500',
 }
 
 
@@ -144,30 +155,56 @@ def render(on_complete=None):
         _reset()
         for s in STEPS:
             refresh_fns[s.KEY].refresh()
+            circle_fns[s.KEY].refresh()
 
         state.update(running=True, mid=int(mid_str))
         fetch_btn.disable()
         stop_btn.classes(remove='hidden')
 
-        for step in STEPS:
+        ctx: dict = {}
+        failed_keys: set = set()
+
+        for phase in PHASES:
             if state['abort']:
-                _update(step.KEY, 'stopped')
+                for step in phase:
+                    if state['statuses'][step.KEY] == 'pending':
+                        _update(step.KEY, 'stopped')
                 continue
 
-            _update(step.KEY, 'running')
+            async def _run_step(step) -> None:
+                # 检查依赖是否失败
+                if step.DEPENDS_ON and any(d in failed_keys for d in step.DEPENDS_ON):
+                    _update(step.KEY, 'stopped', '依赖步骤失败，已跳过')
+                    return
 
-            try:
-                await step.fetch(mid_str)
-                _update(step.KEY, 'done')
-            except Exception as exc:
-                _update(step.KEY, 'error', str(exc)[:80])
-                state['abort'] = True
+                if state['abort']:
+                    _update(step.KEY, 'stopped')
+                    return
+
+                # 新鲜度检查
+                skip, msg = step.should_skip(int(mid_str))
+                if skip:
+                    _update(step.KEY, 'skipped', msg)
+                    return
+
+                _update(step.KEY, 'running')
+                try:
+                    await step.fetch(mid_str, ctx)
+                    _update(step.KEY, 'done')
+                except Exception as exc:
+                    _update(step.KEY, 'error', str(exc)[:80])
+                    failed_keys.add(step.KEY)
+
+            if len(phase) == 1:
+                await _run_step(phase[0])
+            else:
+                await asyncio.gather(*[_run_step(s) for s in phase])
 
         fetch_btn.enable()
         stop_btn.classes(add='hidden')
         state['running'] = False
 
-        # 抓取成功后自动跳转结论页
+        # 只要没有用户中断，即使部分步骤失败也跳转结论页
         if not state['abort'] and on_complete:
             on_complete(state['mid'])
 

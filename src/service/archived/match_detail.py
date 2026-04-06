@@ -245,6 +245,36 @@ def _export_csv(data: list[dict], out_path: Path) -> None:
         writer.writerows(data)
 
 
+def fetch_match_all(match_id: str | int) -> dict:
+    """Fetch HTML once, parse and persist standings + recent + h2h.
+
+    Returns context dict: {'match_time': str, 'match_year': int}
+    """
+    from datetime import datetime
+    from src.db import get_conn
+    from src.db.repo.standings import upsert_standings
+    from src.db.repo.recent_matches import upsert_recent_matches
+    from src.db.repo.h2h_matches import upsert_h2h_matches
+
+    conn = get_conn()
+    html = _fetch_html(match_id)
+    record = _parse_detail(html)
+
+    upsert_standings(conn, record)
+    upsert_recent_matches(conn, record)
+
+    h2h_records = _parse_recent_matches(html, "v_data", limit=20)
+    upsert_h2h_matches(conn, int(match_id), h2h_records)
+
+    match_time = record.get("match_time", "")
+    try:
+        match_year = int(match_time[:4])
+    except (ValueError, IndexError):
+        match_year = datetime.now().year
+
+    return {"match_time": match_time, "match_year": match_year}
+
+
 def fetch_match_detail(match_id: str | int) -> int:
     """Fetch, parse, and persist standings + recent matches for a single match.
 

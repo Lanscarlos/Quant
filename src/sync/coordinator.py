@@ -114,3 +114,15 @@ def should_fetch_history(schedule_id: int) -> bool:
     if _match_status(schedule_id) == -1:
         return count == 0       # 完场：抓过一次就不再抓
     return True                 # 进行中/未开赛：用户主动点击则总是刷新
+
+
+# ── asian_odds_history ───────────────────────────────────────────────────────
+
+def should_fetch_asian_history(schedule_id: int) -> bool:
+    """True → 调用 fetch_asian_handicap_history()；False → 直接读 DB。"""
+    count = get_conn().execute(
+        "SELECT COUNT(*) FROM asian_odds_365_history WHERE schedule_id = ?", (schedule_id,)
+    ).fetchone()[0]
+    if _match_status(schedule_id) == -1:
+        return count == 0
+    return True

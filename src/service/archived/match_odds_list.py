@@ -168,6 +168,16 @@ def _export_csv(data: list[dict], out_path: Path) -> None:
         writer.writerows(data)
 
 
+def fetch_match_odds_with_record_ids(schedule_id: str | int) -> dict[int, int]:
+    """Fetch, parse, persist WH/Coral odds. Returns {company_id: record_id}."""
+    from src.db import get_conn
+
+    conn = get_conn()
+    records = _fetch_and_parse(schedule_id)
+    _save_to_db(conn, int(schedule_id), records)
+    return get_record_ids(records)
+
+
 def fetch_match_odds_list(schedule_id: str | int) -> dict:
     """Fetch, parse, and persist WH/Coral odds for a given match to SQLite.
 
