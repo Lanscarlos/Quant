@@ -18,7 +18,16 @@ def render():
 
     router = Router()
 
-    router.add('match_list',   lambda: match_list.render(on_match_click=None))
+    # 用 holder 打破初始化顺序依赖：on_match_click 在 mount 之前定义，
+    # 但 detail trigger 在 mount 之后才能拿到。
+    _detail_trigger: list = [None]
+
+    def _on_match_click(mid):
+        router.navigate('analysis')
+        if _detail_trigger[0]:
+            _detail_trigger[0](mid)
+
+    router.add('match_list',   lambda: match_list.render(on_match_click=_on_match_click))
     router.add('analysis',     detail_index.render)
     router.add('info',         info.render)
     router.add('settings',     lambda: ui.label('⚙️ 设置页').classes('text-2xl'))
@@ -27,5 +36,7 @@ def render():
         navigation_bar.render(router)
         ui.separator().props('vertical')
         router.mount()
+
+    _detail_trigger[0] = router.get_api('analysis')
 
     router.navigate('match_list')

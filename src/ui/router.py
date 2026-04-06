@@ -7,6 +7,7 @@ class Router:
         self._panels: ui.tab_panels | None = None
         self.current: str | None = None
         self._listeners: list[callable] = []
+        self._apis: dict[str, any] = {}
 
     def add(self, key: str, render_fn: callable) -> 'Router':
         self._routes[key] = render_fn
@@ -30,8 +31,14 @@ class Router:
         with self._panels:
             for key, render_fn in self._routes.items():
                 with ui.tab_panel(key):
-                    render_fn()
+                    ret = render_fn()
+                    if ret is not None:
+                        self._apis[key] = ret
         return self._panels
+
+    def get_api(self, key: str):
+        """返回页面 render() 的返回值（如有）。"""
+        return self._apis.get(key)
 
     def navigate(self, key: str) -> None:
         if self._panels is None or key not in self._routes:

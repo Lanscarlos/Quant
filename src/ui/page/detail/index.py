@@ -1,9 +1,11 @@
 """
-赛事详情页 — 用户手动输入赛事 ID，步进抓取数据，结论步展示结果.
+赛事详情页 — 用户手动输入赛事 URL 或 ID，步进抓取数据，结论步展示结果.
 
 External API:
   render() — registered with the Router
 """
+import re
+
 from nicegui import ui
 
 from . import conclusion, step_asian_odds, step_euro_odds, step_h2h, step_match_info
@@ -51,7 +53,7 @@ def render():
         # 顶部：输入框 + 按钮
         with ui.row().classes('w-full items-center gap-3 shrink-0'):
             match_input = (
-                ui.input(placeholder='输入赛事 ID')
+                ui.input(placeholder='输入赛事 URL 或 ID，如 https://zq.titan007.com/analysis/2907948sb.htm')
                 .classes('flex-1')
                 .props('outlined dense clearable')
             )
@@ -107,10 +109,21 @@ def render():
         state['messages'][key] = msg
         refresh_fns[key].refresh()
 
+    def _parse_mid(raw: str) -> str | None:
+        """从 URL 或纯数字中提取赛事 ID."""
+        raw = raw.strip()
+        m = re.search(r'/(\d+)sb\.htm', raw)
+        if m:
+            return m.group(1)
+        if raw.isdigit():
+            return raw
+        return None
+
     async def _run_fetch() -> None:
-        mid_str = (match_input.value or '').strip()
+        raw = (match_input.value or '').strip()
+        mid_str = _parse_mid(raw)
         if not mid_str:
-            ui.notify('请输入赛事 ID', type='warning')
+            ui.notify('请输入有效的赛事 URL 或 ID', type='warning')
             return
 
         _reset()
@@ -146,3 +159,11 @@ def render():
 
     fetch_btn.on_click(_run_fetch)
     stop_btn.on_click(lambda: state.update(abort=True))
+
+    def trigger(mid: int | str) -> None:
+        """从外部跳入详情页时调用：填入 URL 并自动开始抓取。"""
+        url = f"https://zq.titan007.com/analysis/{mid}sb.htm"
+        match_input.set_value(url)
+        ui.timer(0, _run_fetch, once=True)
+
+    return trigger
