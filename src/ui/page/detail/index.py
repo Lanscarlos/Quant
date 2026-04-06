@@ -8,9 +8,9 @@ import re
 
 from nicegui import ui
 
-from . import conclusion, step_asian_odds, step_euro_odds, step_h2h, step_match_info
+from . import conclusion, step_asian_odds, step_euro_odds, step_h2h, step_match_info, step_recent
 
-_STEPS = [step_match_info, step_h2h, step_euro_odds, step_asian_odds]
+_STEPS = [step_match_info, step_recent, step_h2h, step_euro_odds, step_asian_odds]
 
 _STATUS_ICON = {
     'pending': ('radio_button_unchecked', 'text-gray-300'),

@@ -55,22 +55,18 @@ def _query_h2h(mid: int) -> dict:
     ).fetchone()
     if not team_row:
         return {'rows': [], 'win': 0, 'draw': 0, 'loss': 0}
-    h_id, a_id = team_row
+    h_id = team_row[0]
 
     rows = conn.execute("""
-        SELECT mr.home_name, mr.away_name, mr.home_id,
-               mr.home_ft, mr.away_ft,
+        SELECT h.home_name, h.away_name, h.home_id,
+               h.home_ft, h.away_ft,
                wo.cur_win, wo.cur_draw, wo.cur_lose
-        FROM match_recent mr
-        LEFT JOIN odds_wh wo ON wo.schedule_id = mr.match_id
-        WHERE (
-            (mr.home_id = ? AND mr.away_id = ?)
-            OR (mr.home_id = ? AND mr.away_id = ?)
-        )
-        GROUP BY mr.match_id
-        ORDER BY mr.date DESC
+        FROM match_h2h h
+        LEFT JOIN odds_wh wo ON wo.schedule_id = h.match_id
+        WHERE h.schedule_id = ?
+        ORDER BY h.date DESC
         LIMIT 6
-    """, (h_id, a_id, a_id, h_id)).fetchall()
+    """, (mid,)).fetchall()
 
     result_rows, win, draw, loss = [], 0, 0, 0
     for r in rows:

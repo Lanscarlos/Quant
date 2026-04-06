@@ -115,7 +115,32 @@ _DDL = [
     "CREATE INDEX IF NOT EXISTS idx_recent_match ON match_recent(schedule_id)",
 
     # ------------------------------------------------------------------
-    # 6. odds_wh — 威廉希尔欧赔快照
+    # 6. match_h2h — 两队交手记录
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS match_h2h (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        schedule_id INTEGER NOT NULL REFERENCES matches(schedule_id) ON DELETE CASCADE,
+        match_id    INTEGER NOT NULL,
+        date        TEXT,
+        league      TEXT,
+        home_id     INTEGER,
+        home_name   TEXT,
+        away_id     INTEGER,
+        away_name   TEXT,
+        home_ft     INTEGER,
+        away_ft     INTEGER,
+        ht_score    TEXT,
+        handicap    TEXT,
+        hc_result   INTEGER,
+        fetched_at  TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
+        UNIQUE(schedule_id, match_id)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_h2h_match ON match_h2h(schedule_id)",
+
+    # ------------------------------------------------------------------
+    # 7. odds_wh — 威廉希尔欧赔快照
     # ------------------------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS odds_wh (

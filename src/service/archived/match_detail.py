@@ -246,7 +246,7 @@ def _export_csv(data: list[dict], out_path: Path) -> None:
 
 
 def fetch_match_detail(match_id: str | int) -> int:
-    """Fetch, parse, and persist standings for a single match to SQLite.
+    """Fetch, parse, and persist standings + recent matches for a single match.
 
     Returns the number of rows written.
     """
@@ -255,6 +255,46 @@ def fetch_match_detail(match_id: str | int) -> int:
     conn = get_conn()
     record = _parse_detail(_fetch_html(match_id))
     return _save_to_db(conn, record)
+
+
+def fetch_match_standings(match_id: str | int) -> int:
+    """Fetch, parse, and persist only league standings for a single match.
+
+    Returns the number of rows written.
+    """
+    from src.db import get_conn
+    from src.db.repo.standings import upsert_standings
+
+    conn = get_conn()
+    record = _parse_detail(_fetch_html(match_id))
+    return upsert_standings(conn, record)
+
+
+def fetch_match_recent(match_id: str | int) -> int:
+    """Fetch, parse, and persist only recent-match history (h_data/a_data) for a single match.
+
+    Returns the number of rows written.
+    """
+    from src.db import get_conn
+    from src.db.repo.recent_matches import upsert_recent_matches
+
+    conn = get_conn()
+    record = _parse_detail(_fetch_html(match_id))
+    return upsert_recent_matches(conn, record)
+
+
+def fetch_match_h2h(match_id: str | int) -> int:
+    """Fetch, parse, and persist head-to-head history (v_data) for a single match.
+
+    Returns the number of rows written.
+    """
+    from src.db import get_conn
+    from src.db.repo.h2h_matches import upsert_h2h_matches
+
+    conn = get_conn()
+    html = _fetch_html(match_id)
+    records = _parse_recent_matches(html, "v_data", limit=20)
+    return upsert_h2h_matches(conn, int(match_id), records)
 
 
 def fetch_match_time(match_id: str | int) -> str | None:

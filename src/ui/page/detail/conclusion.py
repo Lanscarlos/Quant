@@ -2,8 +2,8 @@
 from nicegui import ui
 
 from ._formatters import _d
-from ._queries import _query_asian_odds, _query_header_extras, _query_h2h, _query_match, _query_odds
-from ._renderers import _render_asian_section, _render_h2h_section, _render_odds_section, _wdl_badges
+from ._queries import _query_asian_odds, _query_header_extras, _query_h2h, _query_match, _query_odds, _query_recent_matches
+from ._renderers import _render_asian_section, _render_h2h_section, _render_odds_section, _render_recent_section, _wdl_badges
 
 
 def render(mid: int) -> None:
@@ -13,6 +13,7 @@ def render(mid: int) -> None:
         return
 
     extras      = _query_header_extras(mid)
+    recent      = _query_recent_matches(mid)
     h2h         = _query_h2h(mid)
     odds        = _query_odds(mid)
     asian_odds  = _query_asian_odds(mid)
@@ -77,6 +78,13 @@ def render(mid: int) -> None:
 
         ui.separator().classes('my-2')
 
+        # ── 主客队各自近六场 ──────────────────────────────────────────
+        with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
+            _render_recent_section(recent['home'], extras.get('home_wdl'), is_home=True,  border_right=True)
+            _render_recent_section(recent['away'], extras.get('away_wdl'), is_home=False, border_right=False)
+
+        ui.separator().classes('my-2')
+
         # ── 近六场交手 ────────────────────────────────────────────────
         with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
             _render_h2h_section(h2h, fetched=True, border_right=False)
@@ -93,3 +101,14 @@ def render(mid: int) -> None:
         # ── 365 亚盘 ──────────────────────────────────────────────────
         with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
             _render_asian_section(asian_odds)
+
+        ui.separator().classes('my-2')
+
+        # ── 分析过程 & 结论 ───────────────────────────────────────────
+        with ui.row().classes('w-full gap-3 items-start'):
+            with ui.column().classes('flex-1 gap-1'):
+                ui.label('分析过程').classes('text-sm font-semibold text-slate-600')
+                ui.textarea().classes('w-full').props('outlined dense rows=6')
+            with ui.column().classes('flex-1 gap-1'):
+                ui.label('结论').classes('text-sm font-semibold text-slate-600')
+                ui.textarea().classes('w-full').props('outlined dense rows=6')
