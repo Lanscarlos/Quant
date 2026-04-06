@@ -12,10 +12,6 @@ from . import conclusion, step_asian_odds, step_euro_odds, step_h2h, step_match_
 
 _STEPS = [step_match_info, step_h2h, step_euro_odds, step_asian_odds]
 
-_CONCLUSION_KEY   = 'conclusion'
-_CONCLUSION_ICON  = 'emoji_events'
-_CONCLUSION_LABEL = '结论'
-
 _STATUS_ICON = {
     'pending': ('radio_button_unchecked', 'text-gray-300'),
     'running': ('hourglass_top',          'text-blue-500'),
@@ -48,10 +44,10 @@ def render():
         state['messages'] = {s.KEY: ''        for s in _STEPS}
 
     # ── 布局 ──────────────────────────────────────────────────────────────────
-    with ui.column().classes('w-full h-full gap-4'):
+    with ui.column().classes('w-full h-full gap-0'):
 
         # 顶部：输入框 + 按钮
-        with ui.row().classes('w-full items-center gap-3 shrink-0'):
+        with ui.row().classes('w-full items-center gap-3 shrink-0 px-4 pt-4 pb-2'):
             match_input = (
                 ui.input(placeholder='输入赛事 URL 或 ID，如 https://zq.titan007.com/analysis/2907948sb.htm')
                 .classes('flex-1')
@@ -64,31 +60,40 @@ def render():
                 .classes('hidden')
             )
 
-        # Stepper
-        with ui.stepper(value=_STEPS[0].KEY).props('animated').classes('flex-1 w-full') as stepper:
-            refresh_fns: dict = {}
+        # Tabs 导航
+        with ui.tabs().classes('w-full shrink-0') as tabs:
+            ui.tab('stepper', label='抓取进度', icon='hourglass_top')
+            ui.tab('conclusion', label='结论', icon='emoji_events')
 
-            # 数据抓取步骤
-            for step in _STEPS:
-                with ui.step(step.KEY, title=step.LABEL, icon=step.ICON):
+        ui.separator().classes('m-0')
 
-                    def _make_status(k: str):
-                        @ui.refreshable
-                        def _status():
-                            s   = state['statuses'][k]
-                            msg = state['messages'][k]
-                            ico, cls = _STATUS_ICON[s]
-                            with ui.row().classes('items-center gap-2 py-1'):
-                                ui.icon(ico).classes(f'{cls} text-lg')
-                                ui.label(msg or _STATUS_LABEL[s]).classes('text-sm text-gray-500')
-                        _status()
-                        return _status
+        # Tab 面板
+        with ui.tab_panels(tabs, value='stepper').classes('flex-1 w-full overflow-auto'):
 
-                    refresh_fns[step.KEY] = _make_status(step.KEY)
+            # ── 抓取进度 tab ──────────────────────────────────────────────
+            with ui.tab_panel('stepper').classes('p-4'):
+                with ui.stepper(value=_STEPS[0].KEY).props('vertical animated').classes('w-full') as stepper:
+                    refresh_fns: dict = {}
 
-            # 结论步骤
-            with ui.step(_CONCLUSION_KEY, title=_CONCLUSION_LABEL, icon=_CONCLUSION_ICON):
-                ui.separator().classes('my-2')
+                    for step in _STEPS:
+                        with ui.step(step.KEY, title=step.LABEL, icon=step.ICON):
+
+                            def _make_status(k: str):
+                                @ui.refreshable
+                                def _status():
+                                    s   = state['statuses'][k]
+                                    msg = state['messages'][k]
+                                    ico, cls = _STATUS_ICON[s]
+                                    with ui.row().classes('items-center gap-2 py-1'):
+                                        ui.icon(ico).classes(f'{cls} text-lg')
+                                        ui.label(msg or _STATUS_LABEL[s]).classes('text-sm text-gray-500')
+                                _status()
+                                return _status
+
+                            refresh_fns[step.KEY] = _make_status(step.KEY)
+
+            # ── 结论 tab ──────────────────────────────────────────────────
+            with ui.tab_panel('conclusion').classes('p-4'):
 
                 @ui.refreshable
                 def conclusion_body():
@@ -134,6 +139,7 @@ def render():
         state.update(running=True, mid=int(mid_str))
         fetch_btn.disable()
         stop_btn.classes(remove='hidden')
+        tabs.set_value('stepper')
         stepper.set_value(_STEPS[0].KEY)
 
         for step in _STEPS:
@@ -151,11 +157,13 @@ def render():
                 _update(step.KEY, 'error', str(exc)[:80])
                 state['abort'] = True
 
-        stepper.set_value(_CONCLUSION_KEY)
-        conclusion_body.refresh()
         fetch_btn.enable()
         stop_btn.classes(add='hidden')
         state['running'] = False
+
+        # 抓取完成后自动切换到结论 tab
+        tabs.set_value('conclusion')
+        conclusion_body.refresh()
 
     fetch_btn.on_click(_run_fetch)
     stop_btn.on_click(lambda: state.update(abort=True))
