@@ -2,8 +2,8 @@
 from nicegui import ui
 
 from ._formatters import _d
-from ._queries import _query_header_extras, _query_h2h, _query_match, _query_odds
-from ._renderers import _render_h2h_section, _render_odds_section, _wdl_badges
+from ._queries import _query_asian_odds, _query_header_extras, _query_h2h, _query_match, _query_odds
+from ._renderers import _render_asian_section, _render_h2h_section, _render_odds_section, _wdl_badges
 
 
 def render(mid: int) -> None:
@@ -12,9 +12,10 @@ def render(mid: int) -> None:
         ui.label('未找到赛事数据').classes('text-sm text-slate-400')
         return
 
-    extras = _query_header_extras(mid)
-    h2h    = _query_h2h(mid)
-    odds   = _query_odds(mid)
+    extras      = _query_header_extras(mid)
+    h2h         = _query_h2h(mid)
+    odds        = _query_odds(mid)
+    asian_odds  = _query_asian_odds(mid)
 
     with ui.column().classes('w-full gap-0'):
 
@@ -86,3 +87,9 @@ def render(mid: int) -> None:
         with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
             _render_odds_section(odds, '威廉希尔', 'William Hill', border_right=True)
             _render_odds_section(odds, '立博', 'Ladbrokes', border_right=False)
+
+        ui.separator().classes('my-2')
+
+        # ── 365 亚盘 ──────────────────────────────────────────────────
+        with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
+            _render_asian_section(asian_odds)
