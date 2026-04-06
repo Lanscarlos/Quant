@@ -1,75 +1,71 @@
 """
-Repository: match_odds
+Repository: odds_wh / odds_coral
 
-Writes European odds snapshots from match_odds_list results.
-Strategy: INSERT OR REPLACE on UNIQUE(schedule_id, company_id).
+European odds snapshots for William Hill and Coral.
+Strategy: INSERT OR REPLACE on schedule_id (PRIMARY KEY).
 """
 import re
 import sqlite3
 
 
-def upsert_odds(conn: sqlite3.Connection, schedule_id: int, records: list[dict]) -> int:
-    """Insert or replace odds rows for a single match.
+def upsert_wh(conn: sqlite3.Connection, schedule_id: int, r: dict) -> bool:
+    """Insert or replace a William Hill odds snapshot for one match."""
+    return _upsert(conn, "odds_wh", schedule_id, r)
 
-    `schedule_id` is passed explicitly — it is not present in the raw parsed records.
-    Each dict is the output of match_odds_list.parse_odds().
-    Returns the number of rows written.
-    """
-    rows = []
-    for r in records:
-        rid = _int(r.get("record_id"))
-        cid = _int(r.get("company_id"))
-        if not (rid and cid):
-            continue
-        rows.append((
-            rid,
-            schedule_id,
-            cid,
-            _float(r.get("open_win")),
-            _float(r.get("open_draw")),
-            _float(r.get("open_lose")),
-            _float(r.get("open_win_prob")),
-            _float(r.get("open_draw_prob")),
-            _float(r.get("open_lose_prob")),
-            _float(r.get("open_payout_rate")),
-            _float(r.get("cur_win")),
-            _float(r.get("cur_draw")),
-            _float(r.get("cur_lose")),
-            _float(r.get("cur_win_prob")),
-            _float(r.get("cur_draw_prob")),
-            _float(r.get("cur_lose_prob")),
-            _float(r.get("cur_payout_rate")),
-            _float(r.get("kelly_win")),
-            _float(r.get("kelly_draw")),
-            _float(r.get("kelly_lose")),
-            _float(r.get("hist_kelly_win")),
-            _float(r.get("hist_kelly_draw")),
-            _float(r.get("hist_kelly_lose")),
-            _parse_change_time(r.get("change_time", "")),
-            _int(r.get("flag1")),
-            _int(r.get("flag2")),
-        ))
 
-    if not rows:
-        return 0
+def upsert_coral(conn: sqlite3.Connection, schedule_id: int, r: dict) -> bool:
+    """Insert or replace a Coral odds snapshot for one match."""
+    return _upsert(conn, "odds_coral", schedule_id, r)
 
+
+def _upsert(conn: sqlite3.Connection, table: str, schedule_id: int, r: dict) -> bool:
+    rid = None
+    try:
+        rid = int(r.get("record_id", 0)) or None
+    except (TypeError, ValueError):
+        pass
+    row = (
+        schedule_id,
+        rid,
+        _float(r.get("open_win")),
+        _float(r.get("open_draw")),
+        _float(r.get("open_lose")),
+        _float(r.get("open_win_prob")),
+        _float(r.get("open_draw_prob")),
+        _float(r.get("open_lose_prob")),
+        _float(r.get("open_payout_rate")),
+        _float(r.get("cur_win")),
+        _float(r.get("cur_draw")),
+        _float(r.get("cur_lose")),
+        _float(r.get("cur_win_prob")),
+        _float(r.get("cur_draw_prob")),
+        _float(r.get("cur_lose_prob")),
+        _float(r.get("cur_payout_rate")),
+        _float(r.get("kelly_win")),
+        _float(r.get("kelly_draw")),
+        _float(r.get("kelly_lose")),
+        _float(r.get("hist_kelly_win")),
+        _float(r.get("hist_kelly_draw")),
+        _float(r.get("hist_kelly_lose")),
+        _parse_change_time(r.get("change_time", "")),
+    )
     with conn:
-        conn.executemany(
-            """
-            INSERT OR REPLACE INTO match_odds (
-                record_id, schedule_id, company_id,
+        conn.execute(
+            f"""
+            INSERT OR REPLACE INTO {table} (
+                schedule_id, record_id,
                 open_win, open_draw, open_lose,
                 open_win_prob, open_draw_prob, open_lose_prob, open_payout_rate,
                 cur_win, cur_draw, cur_lose,
                 cur_win_prob, cur_draw_prob, cur_lose_prob, cur_payout_rate,
                 kelly_win, kelly_draw, kelly_lose,
                 hist_kelly_win, hist_kelly_draw, hist_kelly_lose,
-                change_time, flag1, flag2
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                change_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            rows,
+            row,
         )
-    return len(rows)
+    return True
 
 
 def _parse_change_time(raw: str) -> str | None:
@@ -92,13 +88,6 @@ def _parse_change_time(raw: str) -> str | None:
         )
     except ValueError:
         return raw or None
-
-
-def _int(val) -> int | None:
-    try:
-        return int(val)
-    except (TypeError, ValueError):
-        return None
 
 
 def _float(val) -> float | None:

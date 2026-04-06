@@ -1,24 +1,22 @@
 """
-Repository: asian_odds_history
+Repository: asian_odds_365_history
 
-Writes per-company Asian handicap odds change history.
-Strategy: INSERT OR IGNORE on UNIQUE(schedule_id, company_id, change_time) — history is immutable.
+Writes Bet365 Asian handicap odds change history.
+Strategy: INSERT OR IGNORE on UNIQUE(schedule_id, change_time) — history is immutable.
 """
 import sqlite3
 
 
-def upsert_asian_odds_history(
+def upsert_365_history(
     conn: sqlite3.Connection,
     schedule_id: int,
-    company_id: int,
     records: list[dict],
     match_year: int,
 ) -> int:
-    """Insert Asian handicap odds history rows for a single company + match.
+    """Insert Bet365 Asian handicap history rows for one match.
 
     Args:
         schedule_id: match schedule_id.
-        company_id:  betting company ID.
         records:     raw output of match_asian_handicap_history._parse_history().
         match_year:  year of the match, used to complete "MM-DD HH:MM" timestamps.
     Returns the number of rows written.
@@ -31,7 +29,6 @@ def upsert_asian_odds_history(
             continue
         rows.append((
             schedule_id,
-            company_id,
             change_time,
             r.get("score") or None,
             _float(r.get("home_odds")),
@@ -48,12 +45,12 @@ def upsert_asian_odds_history(
     with conn:
         conn.executemany(
             """
-            INSERT OR IGNORE INTO asian_odds_history (
-                schedule_id, company_id,
+            INSERT OR IGNORE INTO asian_odds_365_history (
+                schedule_id,
                 change_time, score,
                 home_odds, handicap, away_odds,
                 is_opening, home_dir, away_dir
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )

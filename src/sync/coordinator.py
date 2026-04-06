@@ -75,11 +75,11 @@ def should_fetch_odds(schedule_id: int, *, status: int | None = None) -> bool:
         status = _match_status(schedule_id)
     if status == -1:
         count = conn.execute(
-            "SELECT COUNT(*) FROM match_odds WHERE schedule_id = ?", (schedule_id,)
+            "SELECT COUNT(*) FROM odds_wh WHERE schedule_id = ?", (schedule_id,)
         ).fetchone()[0]
         return count == 0       # 完场：有数据就不再抓
     row = conn.execute(
-        "SELECT MIN(fetched_at) FROM match_odds WHERE schedule_id = ?", (schedule_id,)
+        "SELECT fetched_at FROM odds_wh WHERE schedule_id = ?", (schedule_id,)
     ).fetchone()
     threshold = _ODDS_THRESHOLDS.get(status, _ODDS_STALE_DEFAULT)
     return _is_stale(row[0] if row else None, threshold)
@@ -94,11 +94,11 @@ def should_fetch_asian_odds(schedule_id: int, *, status: int | None = None) -> b
         status = _match_status(schedule_id)
     if status == -1:
         count = conn.execute(
-            "SELECT COUNT(*) FROM match_asian_odds WHERE schedule_id = ?", (schedule_id,)
+            "SELECT COUNT(*) FROM asian_odds_365 WHERE schedule_id = ?", (schedule_id,)
         ).fetchone()[0]
         return count == 0
     row = conn.execute(
-        "SELECT MIN(fetched_at) FROM match_asian_odds WHERE schedule_id = ?", (schedule_id,)
+        "SELECT fetched_at FROM asian_odds_365 WHERE schedule_id = ?", (schedule_id,)
     ).fetchone()
     threshold = _ODDS_THRESHOLDS.get(status, _ODDS_STALE_DEFAULT)
     return _is_stale(row[0] if row else None, threshold)
@@ -106,10 +106,10 @@ def should_fetch_asian_odds(schedule_id: int, *, status: int | None = None) -> b
 
 # ── odds_history ──────────────────────────────────────────────────────────────
 
-def should_fetch_history(record_id: int, schedule_id: int) -> bool:
+def should_fetch_history(schedule_id: int) -> bool:
     """True → 调用 fetch_odds_history()；False → 直接读 DB。"""
     count = get_conn().execute(
-        "SELECT COUNT(*) FROM odds_history WHERE record_id = ?", (record_id,)
+        "SELECT COUNT(*) FROM odds_wh_history WHERE schedule_id = ?", (schedule_id,)
     ).fetchone()[0]
     if _match_status(schedule_id) == -1:
         return count == 0       # 完场：抓过一次就不再抓

@@ -72,25 +72,58 @@ def render():
 
             # ── 抓取进度 tab ──────────────────────────────────────────────
             with ui.tab_panel('stepper').classes('p-4'):
-                with ui.stepper(value=_STEPS[0].KEY).props('vertical animated').classes('w-full') as stepper:
-                    refresh_fns: dict = {}
+                refresh_fns: dict = {}
+                circle_fns:  dict = {}
 
-                    for step in _STEPS:
-                        with ui.step(step.KEY, title=step.LABEL, icon=step.ICON):
+                _CIRCLE_CLS = {
+                    'pending': 'bg-slate-100 text-slate-400',
+                    'running': 'bg-blue-100  text-blue-600',
+                    'done':    'bg-green-100 text-green-600',
+                    'error':   'bg-red-100   text-red-600',
+                    'stopped': 'bg-orange-100 text-orange-500',
+                }
 
-                            def _make_status(k: str):
+                for idx, step in enumerate(_STEPS, start=1):
+
+                    def _make_row(k: str, number: int, label: str, icon: str):
+                        with ui.row().classes('w-full items-start gap-4'):
+
+                            # 左：编号圆圈 + 连接线
+                            with ui.column().classes('items-center gap-0 shrink-0 w-8'):
+
                                 @ui.refreshable
-                                def _status():
+                                def _circle(k=k, n=number):
+                                    cls = _CIRCLE_CLS[state['statuses'][k]]
+                                    ui.label(str(n)).classes(
+                                        f'w-7 h-7 rounded-full {cls} '
+                                        'text-xs font-bold flex items-center justify-center'
+                                    )
+
+                                _circle()
+                                circle_fns[k] = _circle
+
+                                if number < len(_STEPS):
+                                    ui.element('div').classes('w-px bg-slate-200 mt-1').style('height: 48px')
+
+                            # 右：步骤标题 + 状态
+                            with ui.column().classes('flex-1 gap-1 pb-4'):
+                                with ui.row().classes('items-center gap-2 h-7'):
+                                    ui.icon(icon).classes('text-slate-400 text-base')
+                                    ui.label(label).classes('text-sm font-medium text-slate-700')
+
+                                @ui.refreshable
+                                def _status(k=k):
                                     s   = state['statuses'][k]
                                     msg = state['messages'][k]
                                     ico, cls = _STATUS_ICON[s]
-                                    with ui.row().classes('items-center gap-2 py-1'):
-                                        ui.icon(ico).classes(f'{cls} text-lg')
-                                        ui.label(msg or _STATUS_LABEL[s]).classes('text-sm text-gray-500')
-                                _status()
-                                return _status
+                                    with ui.row().classes('items-center gap-2'):
+                                        ui.icon(ico).classes(f'{cls} text-base')
+                                        ui.label(msg or _STATUS_LABEL[s]).classes('text-xs text-gray-500')
 
-                            refresh_fns[step.KEY] = _make_status(step.KEY)
+                                _status()
+                                refresh_fns[k] = _status
+
+                    _make_row(step.KEY, idx, step.LABEL, step.ICON)
 
             # ── 结论 tab ──────────────────────────────────────────────────
             with ui.tab_panel('conclusion').classes('p-4'):
@@ -113,6 +146,7 @@ def render():
         state['statuses'][key] = status
         state['messages'][key] = msg
         refresh_fns[key].refresh()
+        circle_fns[key].refresh()
 
     def _parse_mid(raw: str) -> str | None:
         """从 URL 或纯数字中提取赛事 ID."""
@@ -140,14 +174,12 @@ def render():
         fetch_btn.disable()
         stop_btn.classes(remove='hidden')
         tabs.set_value('stepper')
-        stepper.set_value(_STEPS[0].KEY)
 
         for step in _STEPS:
             if state['abort']:
                 _update(step.KEY, 'stopped')
                 continue
 
-            stepper.set_value(step.KEY)
             _update(step.KEY, 'running')
 
             try:

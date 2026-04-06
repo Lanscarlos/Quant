@@ -18,6 +18,20 @@ def render(mid: int) -> None:
 
     with ui.column().classes('w-full gap-0'):
 
+        # ── 操作按钮栏 ────────────────────────────────────────────────
+        with ui.row().classes('w-full items-center gap-1 pb-2 flex-wrap'):
+            ui.button('点击获取数据1', on_click=lambda: ui.notify('点击获取数据1')).props('outline size=sm')
+            ui.button('点击获取数据2', on_click=lambda: ui.notify('点击获取数据2')).props('outline size=sm')
+            ui.button('数据分析初始', on_click=lambda: ui.notify('数据分析初始')).props('outline size=sm')
+            ui.button('结果保存',     on_click=lambda: ui.notify('结果保存')).props('outline size=sm')
+            ui.button('历史数据加载', on_click=lambda: ui.notify('历史数据加载')).props('outline size=sm')
+            ui.button('历史数据页面', on_click=lambda: ui.notify('历史数据页面')).props('outline size=sm')
+            ui.button('反向为图片',   on_click=lambda: ui.notify('反向为图片')).props('outline size=sm')
+            ui.button('分析结果打印', on_click=lambda: ui.notify('分析结果打印')).props('outline size=sm')
+            ui.button('返回',         on_click=lambda: ui.notify('返回')).props('outline size=sm color=negative')
+
+        ui.separator().classes('mb-2')
+
         # ── 赛事头部 ──────────────────────────────────────────────────
         with ui.row().classes('w-full items-center py-2'):
 

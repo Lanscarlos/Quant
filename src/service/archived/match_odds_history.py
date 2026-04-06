@@ -10,6 +10,9 @@ Extracts from the odds history table inside <span id='odds'>:
   - payout_rate, kelly_win, kelly_draw, kelly_lose
   - change_time, is_opening (初盘标记)
   - change_dir: direction of each odds change (up / down / unchanged)
+
+Writes to odds_wh_history (company_id=115) or odds_coral_history (company_id=82).
+record_id is required for the HTTP URL but is not stored in the database.
 """
 import csv
 import re
@@ -17,6 +20,10 @@ from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
+
+# Supported companies (must match match_odds_list.py)
+COMPANY_WH    = 115  # William Hill 威廉希尔
+COMPANY_CORAL = 82   # Ladbrokes/Coral 立博
 
 _HEADERS = {
     "User-Agent": (
@@ -78,21 +85,21 @@ def _parse_history(html: str) -> list[dict]:
         change_time = re.sub(r"\(初盘\)$", "", time_text).strip()
 
         record = {
-            "win":          _cell_text(tds[0]),   # 本次变动后主胜赔率
-            "draw":         _cell_text(tds[1]),   # 本次变动后平局赔率
-            "lose":         _cell_text(tds[2]),   # 本次变动后客胜赔率
-            "win_prob":     _cell_text(tds[3]),   # 主胜隐含概率 (%)
-            "draw_prob":    _cell_text(tds[4]),   # 平局隐含概率 (%)
-            "lose_prob":    _cell_text(tds[5]),   # 客胜隐含概率 (%)
-            "payout_rate":  _cell_text(tds[6]),   # 返还率 (%)
-            "kelly_win":    _cell_text(tds[7]),   # 凯利指数（主胜）
-            "kelly_draw":   _cell_text(tds[8]),   # 凯利指数（平局）
-            "kelly_lose":   _cell_text(tds[9]),   # 凯利指数（客胜）
-            "change_time":  change_time,           # 赔率变动时间
-            "is_opening":   "1" if is_opening else "0",  # 是否为初盘（最早一条）
-            "win_dir":      _cell_dir(tds[0]),    # 主胜赔率变动方向：up/down/unchanged
-            "draw_dir":     _cell_dir(tds[1]),    # 平局赔率变动方向：up/down/unchanged
-            "lose_dir":     _cell_dir(tds[2]),    # 客胜赔率变动方向：up/down/unchanged
+            "win":          _cell_text(tds[0]),
+            "draw":         _cell_text(tds[1]),
+            "lose":         _cell_text(tds[2]),
+            "win_prob":     _cell_text(tds[3]),
+            "draw_prob":    _cell_text(tds[4]),
+            "lose_prob":    _cell_text(tds[5]),
+            "payout_rate":  _cell_text(tds[6]),
+            "kelly_win":    _cell_text(tds[7]),
+            "kelly_draw":   _cell_text(tds[8]),
+            "kelly_lose":   _cell_text(tds[9]),
+            "change_time":  change_time,
+            "is_opening":   "1" if is_opening else "0",
+            "win_dir":      _cell_dir(tds[0]),
+            "draw_dir":     _cell_dir(tds[1]),
+            "lose_dir":     _cell_dir(tds[2]),
         }
         result.append(record)
 
@@ -111,24 +118,23 @@ def _fetch_and_parse(
 
 def _save_to_db(
     conn,
-    record_id: int,
     schedule_id: int,
     company_id: int,
     records: list[dict],
     match_year: int,
 ) -> int:
-    """Persist odds history for a single company + match to SQLite.
+    """Persist odds history to the appropriate company table.
 
-    Args:
-        record_id:   match_odds.record_id — FK to parent odds row.
-        schedule_id: match schedule_id for fast per-match queries.
-        company_id:  company_id for fast per-company filters.
-        records:     raw output of _fetch_and_parse().
-        match_year:  year of the match, used to complete "MM-DD HH:MM" timestamps.
-    Returns the number of rows written.
+    Routes: company_id=115 → odds_wh_history, company_id=82 → odds_coral_history.
+    Returns the number of rows written, or 0 for unknown companies.
     """
-    from src.db.repo.odds_history import upsert_odds_history
-    return upsert_odds_history(conn, record_id, schedule_id, company_id, records, match_year)
+    from src.db.repo.odds_history import upsert_wh_history, upsert_coral_history
+
+    if company_id == COMPANY_WH:
+        return upsert_wh_history(conn, schedule_id, records, match_year)
+    elif company_id == COMPANY_CORAL:
+        return upsert_coral_history(conn, schedule_id, records, match_year)
+    return 0
 
 
 def _export_csv(data: list[dict], out_path: Path) -> None:
@@ -151,9 +157,9 @@ def fetch_odds_history(
     """Fetch, parse, and persist odds change history for a given company + match.
 
     Args:
-        rid:        record_id — the odds record ID from match_odds table.
+        rid:        record_id — used to build the OddsHistory URL (not stored in DB).
         mid:        match schedule_id.
-        cid:        company_id.
+        cid:        company_id (115=WH, 82=Coral).
         match_year: year of the match, used to complete "MM-DD HH:MM" timestamps.
     Returns the number of rows written.
     """
@@ -161,7 +167,7 @@ def fetch_odds_history(
 
     conn = get_conn()
     records = _fetch_and_parse(rid, mid, cid)
-    return _save_to_db(conn, int(rid), int(mid), int(cid), records, match_year)
+    return _save_to_db(conn, int(mid), int(cid), records, match_year)
 
 
 if __name__ == "__main__":
@@ -173,7 +179,7 @@ if __name__ == "__main__":
     from src.db import get_conn, init_db
     init_db()
 
-    target_cid = "115"
+    target_cid = COMPANY_WH       # 115
     target_rid = "151025873"
     target_mid = "2921107"
 
@@ -191,7 +197,6 @@ if __name__ == "__main__":
     conn = get_conn()
     count = _save_to_db(
         conn,
-        record_id=int(target_rid),
         schedule_id=int(target_mid),
         company_id=int(target_cid),
         records=records,

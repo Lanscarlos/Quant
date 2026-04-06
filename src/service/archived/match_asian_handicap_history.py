@@ -2,9 +2,9 @@
 Match Asian handicap odds history fetcher for vip.titan007.com
 
 Data source:
-  https://vip.titan007.com/changeDetail/handicap.aspx?id={match_id}&companyID={company_id}&l=0
+  https://vip.titan007.com/changeDetail/handicap.aspx?id={match_id}&companyID=8&l=0
 
-Page is server-side rendered HTML (GB2312 encoded).
+Page is server-side rendered HTML (GB2312 encoded). Only Bet365 (company_id=8) is fetched.
 
 Extracts from the history table (columns in order):
   - change_time  [td 0]  变动时间 "MM-DD HH:MM"，尾部可能带 "(初盘)"
@@ -24,6 +24,8 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 
+COMPANY_365 = 8  # Bet365
+
 _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -32,17 +34,16 @@ _HEADERS = {
     "Referer": "https://vip.titan007.com/",
 }
 
-# Font color → change direction (same convention as European odds history)
 _COLOR_DIR = {
     "green": "up",
     "red":   "down",
 }
 
 
-def _fetch_html(mid: str | int, cid: str | int) -> str:
+def _fetch_html(mid: str | int) -> str:
     url = (
         f"https://vip.titan007.com/changeDetail/handicap.aspx"
-        f"?id={mid}&companyID={cid}&l=0"
+        f"?id={mid}&companyID={COMPANY_365}&l=0"
     )
     resp = requests.get(url, headers=_HEADERS, timeout=15)
     resp.raise_for_status()
@@ -80,7 +81,6 @@ def _find_history_table(soup: BeautifulSoup):
         tds = data_rows[0].find_all("td")
         if len(tds) < 5:
             continue
-        # The 3rd cell should be a numeric odds value
         try:
             float(tds[2].get_text(strip=True))
             return table
@@ -100,65 +100,55 @@ def _parse_history(html: str) -> list[dict]:
         return []
 
     rows = table.find_all("tr")
-    # Skip the header row (first tr)
     result = []
-    for row in rows[1:]:
+    for row in rows[1:]:  # skip header
         tds = row.find_all("td")
         if len(tds) < 5:
             continue
 
         time_text = _cell_text(tds[0])
-        # "(初盘)" may appear at the end of the time string
         is_opening = time_text.endswith("(初盘)")
         change_time = re.sub(r"\(初盘\)$", "", time_text).strip()
 
-        # If a 6th status column exists, "开" also marks the opening record
         if not is_opening and len(tds) >= 6:
-            status = _cell_text(tds[5])
-            is_opening = status == "开"
+            is_opening = _cell_text(tds[5]) == "开"
 
         if not change_time:
             continue
 
         record = {
-            "change_time": change_time,             # "MM-DD HH:MM"
-            "score":       _cell_text(tds[1]),      # 变动时比分
-            "home_odds":   _cell_text(tds[2]),      # 主队赔率
-            "handicap":    _cell_text(tds[3]),      # 盘口让球数
-            "away_odds":   _cell_text(tds[4]),      # 客队赔率
+            "change_time": change_time,
+            "score":       _cell_text(tds[1]),
+            "home_odds":   _cell_text(tds[2]),
+            "handicap":    _cell_text(tds[3]),
+            "away_odds":   _cell_text(tds[4]),
             "is_opening":  "1" if is_opening else "0",
-            "home_dir":    _cell_dir(tds[2]),       # 主队赔率变动方向
-            "away_dir":    _cell_dir(tds[4]),       # 客队赔率变动方向
+            "home_dir":    _cell_dir(tds[2]),
+            "away_dir":    _cell_dir(tds[4]),
         }
         result.append(record)
 
     return result
 
 
-def _fetch_and_parse(mid: str | int, cid: str | int) -> list[dict]:
-    """Fetch and parse Asian handicap odds history for a given match + company."""
-    html = _fetch_html(mid, cid)
+def _fetch_and_parse(mid: str | int) -> list[dict]:
+    """Fetch and parse Bet365 Asian handicap odds history for a given match."""
+    html = _fetch_html(mid)
     return _parse_history(html)
 
 
 def _save_to_db(
     conn,
     schedule_id: int,
-    company_id: int,
     records: list[dict],
     match_year: int,
 ) -> int:
-    """Persist Asian handicap odds history for a single company + match to SQLite.
+    """Persist Bet365 Asian handicap history for a single match to SQLite.
 
-    Args:
-        schedule_id: match schedule_id.
-        company_id:  betting company ID.
-        records:     raw output of _fetch_and_parse().
-        match_year:  year of the match, used to complete "MM-DD HH:MM" timestamps.
     Returns the number of rows written.
     """
-    from src.db.repo.asian_odds_history import upsert_asian_odds_history
-    return upsert_asian_odds_history(conn, schedule_id, company_id, records, match_year)
+    from src.db.repo.asian_odds_history import upsert_365_history
+    return upsert_365_history(conn, schedule_id, records, match_year)
 
 
 def _export_csv(data: list[dict], out_path: Path) -> None:
@@ -172,24 +162,19 @@ def _export_csv(data: list[dict], out_path: Path) -> None:
         writer.writerows(data)
 
 
-def fetch_asian_handicap_history(
-    mid: str | int,
-    cid: str | int,
-    match_year: int,
-) -> int:
-    """Fetch, parse, and persist Asian handicap odds history for a given company + match.
+def fetch_asian_handicap_history(mid: str | int, match_year: int) -> int:
+    """Fetch, parse, and persist Bet365 Asian handicap history for a given match.
 
     Args:
         mid:        match schedule_id.
-        cid:        company_id.
         match_year: year of the match, used to complete "MM-DD HH:MM" timestamps.
     Returns the number of rows written.
     """
     from src.db import get_conn
 
     conn = get_conn()
-    records = _fetch_and_parse(mid, cid)
-    return _save_to_db(conn, int(mid), int(cid), records, match_year)
+    records = _fetch_and_parse(mid)
+    return _save_to_db(conn, int(mid), records, match_year)
 
 
 if __name__ == "__main__":
@@ -202,10 +187,9 @@ if __name__ == "__main__":
     init_db()
 
     target_mid = "2941716"
-    target_cid = "8"
 
-    print(f"Fetching Asian handicap history: match={target_mid} company={target_cid} ...")
-    records = _fetch_and_parse(target_mid, target_cid)
+    print(f"Fetching Bet365 Asian handicap history: match={target_mid} ...")
+    records = _fetch_and_parse(target_mid)
     print(f"Total changes : {len(records)}")
 
     if records:
@@ -219,7 +203,6 @@ if __name__ == "__main__":
     count = _save_to_db(
         conn,
         schedule_id=int(target_mid),
-        company_id=int(target_cid),
         records=records,
         match_year=datetime.date.today().year,
     )

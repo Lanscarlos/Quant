@@ -8,8 +8,7 @@ from src.service.archived.match_odds_list import fetch_match_odds_list
 
 from ._formatters import _f, _p, _parse_year
 
-_WH_COMPANY_ID    = 115   # William Hill
-_BET365_COMPANY_ID = 281  # Bet365
+_WH_COMPANY_ID = 115   # William Hill（用于历史 URL 参数）
 
 
 # ── Basic match info ───────────────────────────────────────────────────────────
@@ -63,7 +62,7 @@ def _query_h2h(mid: int) -> dict:
                mr.home_ft, mr.away_ft,
                wo.cur_win, wo.cur_draw, wo.cur_lose
         FROM match_recent mr
-        LEFT JOIN match_odds wo ON wo.schedule_id = mr.match_id AND wo.company_id = ?
+        LEFT JOIN odds_wh wo ON wo.schedule_id = mr.match_id
         WHERE (
             (mr.home_id = ? AND mr.away_id = ?)
             OR (mr.home_id = ? AND mr.away_id = ?)
@@ -71,7 +70,7 @@ def _query_h2h(mid: int) -> dict:
         GROUP BY mr.match_id
         ORDER BY mr.date DESC
         LIMIT 6
-    """, (_WH_COMPANY_ID, h_id, a_id, a_id, h_id)).fetchall()
+    """, (h_id, a_id, a_id, h_id)).fetchall()
 
     result_rows, win, draw, loss = [], 0, 0, 0
     for r in rows:
@@ -106,28 +105,26 @@ def _query_recent_matches(mid: int) -> dict:
             wo.cur_win, wo.cur_draw, wo.cur_lose,
             h30.win,    h30.draw,    h30.lose
         FROM match_recent mr
-        LEFT JOIN match_odds wo
-            ON wo.schedule_id = mr.match_id AND wo.company_id = ?
+        LEFT JOIN odds_wh wo ON wo.schedule_id = mr.match_id
         LEFT JOIN (
             SELECT oh.schedule_id, oh.win, oh.draw, oh.lose,
                    ROW_NUMBER() OVER (
                        PARTITION BY oh.schedule_id
                        ORDER BY oh.change_time DESC
                    ) AS rn
-            FROM odds_history oh
+            FROM odds_wh_history oh
             LEFT JOIN matches      m   ON oh.schedule_id = m.schedule_id
             LEFT JOIN match_recent mr2 ON oh.schedule_id = mr2.match_id
                                       AND mr2.schedule_id = ?
                                       AND mr2.match_time IS NOT NULL AND mr2.match_time != ''
-            WHERE oh.company_id = ?
-              AND oh.is_opening = 0
+            WHERE oh.is_opening = 0
               AND oh.change_time <= datetime(
                       COALESCE(m.match_time, mr2.match_time),
                       '-30 minutes')
         ) h30 ON h30.schedule_id = mr.match_id AND h30.rn = 1
         WHERE mr.schedule_id = ?
         ORDER BY mr.side, mr.id
-    """, (_WH_COMPANY_ID, mid, _WH_COMPANY_ID, mid)).fetchall()
+    """, (mid, mid)).fetchall()
 
     result: dict = {'home': [], 'away': []}
     for r in rows:
@@ -177,15 +174,19 @@ def _query_header_extras(mid: int) -> dict:
 def _query_odds(mid: int) -> list[dict]:
     conn = get_conn()
     rows = conn.execute("""
-        SELECT c.company_name,
-               o.open_win, o.open_draw, o.open_lose, o.open_payout_rate,
-               o.cur_win, o.cur_draw, o.cur_lose, o.cur_payout_rate,
-               o.kelly_win, o.kelly_draw, o.kelly_lose
-        FROM match_odds o
-        JOIN companies c ON o.company_id = c.company_id
-        WHERE o.schedule_id = ? AND o.company_id IN (115, 82)
-        ORDER BY c.company_name
-    """, (mid,)).fetchall()
+        SELECT 'William Hill' AS company,
+               open_win, open_draw, open_lose, open_payout_rate,
+               cur_win, cur_draw, cur_lose, cur_payout_rate,
+               kelly_win, kelly_draw, kelly_lose
+        FROM odds_wh WHERE schedule_id = ?
+        UNION ALL
+        SELECT 'Ladbrokes' AS company,
+               open_win, open_draw, open_lose, open_payout_rate,
+               cur_win, cur_draw, cur_lose, cur_payout_rate,
+               kelly_win, kelly_draw, kelly_lose
+        FROM odds_coral WHERE schedule_id = ?
+        ORDER BY company
+    """, (mid, mid)).fetchall()
     return [{
         'company':     r[0],
         'open_win':    _f(r[1]),  'open_draw':  _f(r[2]),  'open_lose':  _f(r[3]),
@@ -202,9 +203,9 @@ def _query_asian_odds(mid: int) -> dict | None:
     r = get_conn().execute("""
         SELECT open_handicap, open_home, open_away,
                cur_handicap,  cur_home,  cur_away
-        FROM match_asian_odds
-        WHERE schedule_id = ? AND company_id = ?
-    """, (mid, _BET365_COMPANY_ID)).fetchone()
+        FROM asian_odds_365
+        WHERE schedule_id = ?
+    """, (mid,)).fetchone()
     if not r:
         return None
     return {
@@ -244,7 +245,7 @@ def _fetch_recent_odds(mid: int) -> None:
     def _process_one(match_id, date_str, existing_time):
         c = get_conn()
         has_odds = c.execute(
-            "SELECT 1 FROM match_odds WHERE schedule_id = ? LIMIT 1", (match_id,)
+            "SELECT 1 FROM odds_wh WHERE schedule_id = ? LIMIT 1", (match_id,)
         ).fetchone()
         if not has_odds:
             try:
@@ -252,15 +253,13 @@ def _fetch_recent_odds(mid: int) -> None:
             except Exception:
                 return
         has_history = c.execute(
-            "SELECT 1 FROM odds_history WHERE schedule_id = ? AND company_id = ? LIMIT 1",
-            (match_id, _WH_COMPANY_ID)
+            "SELECT 1 FROM odds_wh_history WHERE schedule_id = ? LIMIT 1", (match_id,)
         ).fetchone()
         if not has_history:
             odds_row = c.execute(
-                "SELECT record_id FROM match_odds WHERE schedule_id = ? AND company_id = ?",
-                (match_id, _WH_COMPANY_ID)
+                "SELECT record_id FROM odds_wh WHERE schedule_id = ?", (match_id,)
             ).fetchone()
-            if odds_row:
+            if odds_row and odds_row[0]:
                 try:
                     fetch_odds_history(odds_row[0], match_id, _WH_COMPANY_ID, _parse_year(date_str))
                 except Exception:

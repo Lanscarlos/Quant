@@ -1,62 +1,42 @@
 """
-Repository: match_asian_odds
+Repository: asian_odds_365
 
-Writes Asian handicap odds snapshots from match_asian_handicap_list results.
-Strategy: INSERT OR REPLACE on UNIQUE(schedule_id, company_id).
+Writes Bet365 Asian handicap odds snapshots.
+Strategy: INSERT OR REPLACE on schedule_id (PRIMARY KEY).
 """
 import sqlite3
 
 
-def upsert_asian_odds(conn: sqlite3.Connection, schedule_id: int, records: list[dict]) -> int:
-    """Insert or replace Asian handicap odds rows for a single match.
+def upsert_365(conn: sqlite3.Connection, schedule_id: int, r: dict) -> bool:
+    """Insert or replace a Bet365 Asian handicap snapshot for one match.
 
-    Each dict is the output of match_asian_handicap_list._parse_list().
-    Returns the number of rows written, or 0 if the match is not yet in the DB.
+    Returns False if the match record does not exist yet (FK guard).
     """
-    # FK pre-check: match_asian_odds.schedule_id → matches.schedule_id
     if not conn.execute(
         "SELECT 1 FROM matches WHERE schedule_id = ?", (schedule_id,)
     ).fetchone():
-        return 0  # caller should persist the match record first
-
-    rows = []
-    for r in records:
-        cid = _int(r.get("company_id"))
-        if not cid:
-            continue
-        rows.append((
-            schedule_id,
-            cid,
-            r.get("open_handicap") or None,
-            _float(r.get("open_home")),
-            _float(r.get("open_away")),
-            r.get("cur_handicap") or None,
-            _float(r.get("cur_home")),
-            _float(r.get("cur_away")),
-        ))
-
-    if not rows:
-        return 0
+        return False  # caller should persist the match record first
 
     with conn:
-        conn.executemany(
+        conn.execute(
             """
-            INSERT OR REPLACE INTO match_asian_odds (
-                schedule_id, company_id,
+            INSERT OR REPLACE INTO asian_odds_365 (
+                schedule_id,
                 open_handicap, open_home, open_away,
                 cur_handicap,  cur_home,  cur_away
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            rows,
+            (
+                schedule_id,
+                r.get("open_handicap") or None,
+                _float(r.get("open_home")),
+                _float(r.get("open_away")),
+                r.get("cur_handicap") or None,
+                _float(r.get("cur_home")),
+                _float(r.get("cur_away")),
+            ),
         )
-    return len(rows)
-
-
-def _int(val) -> int | None:
-    try:
-        return int(val)
-    except (TypeError, ValueError):
-        return None
+    return True
 
 
 def _float(val) -> float | None:

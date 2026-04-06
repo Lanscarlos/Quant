@@ -15,7 +15,6 @@ from src.service.archived.match_list import fetch_match_list
 from src.service.browser_filter import get_filtered_match_ids
 from src.sync.coordinator import should_fetch_match_list
 
-_WH_COMPANY_ID = 115  # William Hill
 
 _TABLE_COLS = [
     {'name': 'idx',      'label': '序号',         'field': 'idx',      'align': 'center', 'style': 'width:48px'},
@@ -57,11 +56,10 @@ def _query_filtered(ids: list) -> list[dict]:
             LEFT JOIN teams   ht ON m.home_team_id = ht.team_id
             LEFT JOIN teams   at ON m.away_team_id = at.team_id
             LEFT JOIN leagues l  ON m.league_abbr  = l.league_abbr
-            LEFT JOIN match_odds o
-                   ON o.schedule_id = m.schedule_id AND o.company_id = ?
+            LEFT JOIN odds_wh o ON o.schedule_id = m.schedule_id
             WHERE CAST(m.schedule_id AS TEXT) IN ({placeholders})
             ORDER BY m.match_time DESC
-        """, (_WH_COMPANY_ID, *ids)).fetchall()
+        """, (*ids,)).fetchall()
     else:
         rows = []
 

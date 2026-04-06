@@ -1,31 +1,39 @@
 """
-Repository: odds_history
+Repository: odds_wh_history / odds_coral_history
 
-Writes per-company odds change history from match_odds_history results.
-Strategy: INSERT OR IGNORE on UNIQUE(record_id, change_time) — history is immutable.
+European odds change history for William Hill and Coral.
+Strategy: INSERT OR IGNORE on UNIQUE(schedule_id, change_time) — history is immutable.
 """
 import sqlite3
 
 
-def upsert_odds_history(
+def upsert_wh_history(
     conn: sqlite3.Connection,
-    record_id: int,
     schedule_id: int,
-    company_id: int,
     records: list[dict],
     match_year: int,
 ) -> int:
-    """Insert odds history rows for a single company + match.
+    """Insert William Hill odds history rows for one match."""
+    return _upsert(conn, "odds_wh_history", schedule_id, records, match_year)
 
-    Args:
-        record_id:   match_odds.record_id — FK to parent row.
-        schedule_id: redundantly stored for fast per-match queries.
-        company_id:  redundantly stored for fast per-company filters.
-        records:     raw output of match_odds_history.parse_history().
-        match_year:  year of the match, used to complete change_time strings
-                     which come as "MM-DD HH:MM" without a year.
-    Returns the number of rows written.
-    """
+
+def upsert_coral_history(
+    conn: sqlite3.Connection,
+    schedule_id: int,
+    records: list[dict],
+    match_year: int,
+) -> int:
+    """Insert Coral odds history rows for one match."""
+    return _upsert(conn, "odds_coral_history", schedule_id, records, match_year)
+
+
+def _upsert(
+    conn: sqlite3.Connection,
+    table: str,
+    schedule_id: int,
+    records: list[dict],
+    match_year: int,
+) -> int:
     rows = []
     for r in records:
         raw_time = (r.get("change_time") or "").strip()
@@ -33,9 +41,7 @@ def upsert_odds_history(
         if not change_time:
             continue
         rows.append((
-            record_id,
             schedule_id,
-            company_id,
             _float(r.get("win")),
             _float(r.get("draw")),
             _float(r.get("lose")),
@@ -58,15 +64,15 @@ def upsert_odds_history(
 
     with conn:
         conn.executemany(
-            """
-            INSERT OR IGNORE INTO odds_history (
-                record_id, schedule_id, company_id,
+            f"""
+            INSERT OR IGNORE INTO {table} (
+                schedule_id,
                 win, draw, lose,
                 win_prob, draw_prob, lose_prob, payout_rate,
                 kelly_win, kelly_draw, kelly_lose,
                 change_time, is_opening,
                 win_dir, draw_dir, lose_dir
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )

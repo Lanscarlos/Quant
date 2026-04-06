@@ -12,12 +12,19 @@ Extracts from the `game` array (pipe-delimited, 27 fields per entry):
   - Kelly index (净胜率指数): kelly_win, kelly_draw, kelly_lose
   - Historical Kelly: hist_kelly_win, hist_kelly_draw, hist_kelly_lose
   - change_time, label
+
+Only William Hill (company_id=115) and Coral (company_id=82) are persisted.
+record_id is retained in parsed records so callers can build history fetch URLs.
 """
 import csv
 import re
 from pathlib import Path
 
 import requests
+
+# Supported companies
+COMPANY_WH    = 115  # William Hill 威廉希尔
+COMPANY_CORAL = 82   # Ladbrokes/Coral 立博
 
 _HEADERS = {
     "User-Agent": (
@@ -30,7 +37,7 @@ _HEADERS = {
 # Field index → name mapping for the pipe-delimited game[] entries
 _FIELDS = {
     0:  "company_id",        # 博彩公司 ID
-    1:  "record_id",         # 赔率记录 ID
+    1:  "record_id",         # 赔率记录 ID（用于历史页面 URL，不存入 DB）
     2:  "company_name",      # 博彩公司名称
     3:  "open_win",          # 初始主胜赔率
     4:  "open_draw",         # 初始平局赔率
@@ -51,7 +58,7 @@ _FIELDS = {
     19: "kelly_lose",        # 凯利指数（客胜）
     20: "change_time",       # 最近一次赔率变动时间
     21: "label",             # 联赛分类标签
-    22: "flag1",             # 标志位 1（是否显示等）
+    22: "flag1",             # 标志位 1
     23: "flag2",             # 标志位 2
     24: "hist_kelly_win",    # 历史凯利指数（主胜）
     25: "hist_kelly_draw",   # 历史凯利指数（平局）
@@ -85,15 +92,11 @@ def _parse_odds(js: str) -> list[dict]:
     use [^)]* to match the Array block. Instead, locate the Array start and
     extract all quoted entries directly from that position.
     """
-    # Find the game Array block. Label values contain parentheses like "36*(英国)",
-    # so we cannot use [^)]* to match the Array boundary. Instead, locate the
-    # Array start then find the closing ");" which does not appear in any data value.
     m = re.search(r"var\s+game\s*=\s*Array\s*\(", js)
     if not m:
         return []
 
     tail = js[m.end():]
-    # The Array ends at the first ");" (closing-quote + semicolon sequence)
     end = tail.find(");")
     block = tail[:end] if end != -1 else tail
     entries = re.findall(r'"([^"]*)"', block)
@@ -108,6 +111,23 @@ def _parse_odds(js: str) -> list[dict]:
     return result
 
 
+def get_record_ids(records: list[dict]) -> dict[int, int]:
+    """Extract {company_id: record_id} for WH and Coral from a parsed odds list.
+
+    Used by the history fetcher to build the OddsHistory URL.
+    """
+    result = {}
+    for r in records:
+        try:
+            cid = int(r.get("company_id", 0))
+            rid = int(r.get("record_id", 0))
+        except (TypeError, ValueError):
+            continue
+        if cid in (COMPANY_WH, COMPANY_CORAL) and rid:
+            result[cid] = rid
+    return result
+
+
 def _fetch_and_parse(mid: str | int, save_dir: Path | None = None) -> list[dict]:
     """Fetch and parse European odds for a given match ID."""
     js = _fetch_js(mid, save_dir=save_dir)
@@ -115,18 +135,26 @@ def _fetch_and_parse(mid: str | int, save_dir: Path | None = None) -> list[dict]
 
 
 def _save_to_db(conn, schedule_id: int, records: list[dict]) -> dict:
-    """Persist odds for a single match to SQLite.
+    """Persist WH and Coral odds snapshots for a single match to SQLite.
 
-    Writes in dependency order: companies → odds.
-    Returns a dict with inserted/replaced counts per table.
+    Returns a dict indicating which companies were written: {'wh': bool, 'coral': bool}.
     """
-    from src.db.repo.companies import upsert_companies
-    from src.db.repo.odds import upsert_odds
+    from src.db.repo.odds import upsert_wh, upsert_coral
 
-    return {
-        "companies": upsert_companies(conn, records),
-        "odds":      upsert_odds(conn, schedule_id, records),
-    }
+    result = {"wh": False, "coral": False}
+
+    for r in records:
+        try:
+            cid = int(r.get("company_id", 0))
+        except (TypeError, ValueError):
+            continue
+
+        if cid == COMPANY_WH:
+            result["wh"] = upsert_wh(conn, schedule_id, r)
+        elif cid == COMPANY_CORAL:
+            result["coral"] = upsert_coral(conn, schedule_id, r)
+
+    return result
 
 
 def _export_csv(data: list[dict], out_path: Path) -> None:
@@ -141,9 +169,9 @@ def _export_csv(data: list[dict], out_path: Path) -> None:
 
 
 def fetch_match_odds_list(schedule_id: str | int) -> dict:
-    """Fetch, parse, and persist European odds for a given match to SQLite.
+    """Fetch, parse, and persist WH/Coral odds for a given match to SQLite.
 
-    Returns a dict with inserted/replaced counts per table.
+    Returns {'wh': bool, 'coral': bool} indicating which were written.
     """
     from src.db import get_conn
 
@@ -165,18 +193,24 @@ if __name__ == "__main__":
     docs_dir = Path(__file__).parent.parent.parent / "docs"
     print(f"Fetching odds for match {target_id} ...")
     records = _fetch_and_parse(target_id, save_dir=docs_dir)
-    print(f"Total companies : {len(records)}")
+    print(f"Total companies parsed : {len(records)}")
 
-    if records:
-        first = records[0]
-        print(f"company_name    : {first.get('company_name')}")
-        print(f"open  W/D/L     : {first.get('open_win')} / {first.get('open_draw')} / {first.get('open_lose')}")
-        print(f"cur   W/D/L     : {first.get('cur_win')} / {first.get('cur_draw')} / {first.get('cur_lose')}")
-        print(f"kelly W/D/L     : {first.get('kelly_win')} / {first.get('kelly_draw')} / {first.get('kelly_lose')}")
+    wh    = next((r for r in records if r.get("company_id") == str(COMPANY_WH)),    None)
+    coral = next((r for r in records if r.get("company_id") == str(COMPANY_CORAL)), None)
+    for label, r in [("WH", wh), ("Coral", coral)]:
+        if r:
+            print(f"{label} open  W/D/L : {r.get('open_win')} / {r.get('open_draw')} / {r.get('open_lose')}")
+            print(f"{label} cur   W/D/L : {r.get('cur_win')} / {r.get('cur_draw')} / {r.get('cur_lose')}")
+            print(f"{label} kelly W/D/L : {r.get('kelly_win')} / {r.get('kelly_draw')} / {r.get('kelly_lose')}")
+        else:
+            print(f"{label} : not found in response")
 
     conn = get_conn()
     counts = _save_to_db(conn, int(target_id), records)
     print(f"DB written : {counts}")
+
+    rids = get_record_ids(records)
+    print(f"Record IDs for history fetch : {rids}")
 
     out = Path(__file__).parent.parent.parent / "docs" / "match_odds_list.csv"
     _export_csv(records, out)

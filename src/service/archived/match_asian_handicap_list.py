@@ -14,6 +14,8 @@ Extracts from the odds table (columns in order):
   - cur_handicap    [td 5]  即时让球数
   - cur_away        [td 6]  即时客队赔率
   - company_id is extracted from the href of the changeDetail link in the row.
+
+Only Bet365 (company_id=8) is persisted to asian_odds_365.
 """
 import csv
 import re
@@ -21,6 +23,8 @@ from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
+
+COMPANY_365 = 8  # Bet365
 
 _HEADERS = {
     "User-Agent": (
@@ -38,7 +42,6 @@ def _fetch_html(mid: str | int, save_dir: Path | None = None) -> str:
     url = f"https://vip.titan007.com/AsianOdds_n.aspx?id={mid}"
     resp = requests.get(url, headers=_HEADERS, timeout=15)
     resp.raise_for_status()
-    # vip.titan007.com pages are typically served as GB2312; fall back gracefully.
     encoding = resp.encoding or "gb2312"
     if encoding.lower() in ("iso-8859-1", "windows-1252"):
         encoding = "gb2312"
@@ -75,11 +78,6 @@ def _parse_list(html: str) -> list[dict]:
       td[10] cur_handicap   oddstype="wholeOdds"
       td[11] cur_away       oddstype="wholeOdds"
       td[12] links (detail / stats / history)
-
-    Selectors used:
-      - Opening odds  → tds with a `title` attribute (timestamp)
-      - Current odds  → tds with oddstype="wholeOdds"
-      - Company name  → tds[1].get_text()
     """
     soup = BeautifulSoup(html, "html.parser")
     result = []
@@ -97,15 +95,12 @@ def _parse_list(html: str) -> list[dict]:
         if not cid:
             continue
 
-        # Company name always in td[1]
         company_name = _td_text(tds[1]) if len(tds) > 1 else ""
 
-        # Opening odds: the 3 tds that carry a `title` timestamp attribute
         open_tds = [td for td in tds if td.get("title")]
         while len(open_tds) < 3:
             open_tds.append(None)
 
-        # Current odds: the 3 tds with oddstype="wholeOdds" (visible, non-hidden)
         cur_tds = [td for td in tds if td.get("oddstype") == "wholeOdds"]
         while len(cur_tds) < 3:
             cur_tds.append(None)
@@ -130,46 +125,21 @@ def _fetch_and_parse(mid: str | int) -> list[dict]:
     return _parse_list(html)
 
 
-def _ensure_companies(conn, records: list[dict]) -> None:
-    """Guarantee every company_id in records exists in the companies table.
+def _save_to_db(conn, schedule_id: int, records: list[dict]) -> bool:
+    """Persist Bet365 Asian handicap snapshot for a single match to SQLite.
 
-    If company_name was not extractable from the page (empty), falls back to using
-    the company_id string as a placeholder name so the FK constraint is satisfied.
+    Filters for company_id=8 (Bet365) and calls upsert_365.
+    Returns True if the record was written, False if Bet365 was not found.
     """
-    rows = []
-    for r in records:
-        cid = r.get("company_id", "").strip()
-        if not cid:
-            continue
-        name = r.get("company_name", "").strip() or cid  # fallback: id as name
-        rows.append((int(cid), name))
+    from src.db.repo.asian_odds import upsert_365
 
-    if rows:
-        with conn:
-            conn.executemany(
-                "INSERT OR IGNORE INTO companies (company_id, company_name) VALUES (?, ?)",
-                rows,
-            )
-
-
-def _save_to_db(conn, schedule_id: int, records: list[dict]) -> dict:
-    """Persist Asian handicap odds for a single match to SQLite.
-
-    Writes in dependency order: companies → asian_odds.
-    Returns a dict with inserted/replaced counts per table.
-    """
-    from src.db.repo.companies import upsert_companies
-    from src.db.repo.asian_odds import upsert_asian_odds
-
-    companies_written = upsert_companies(conn, records)
-    # Fallback: if company_name was not parsed, register company_id with id-as-name
-    # to avoid FK constraint failures in match_asian_odds.
-    _ensure_companies(conn, records)
-
-    return {
-        "companies":  companies_written,
-        "asian_odds": upsert_asian_odds(conn, schedule_id, records),
-    }
+    r365 = next(
+        (r for r in records if r.get("company_id") == str(COMPANY_365)),
+        None,
+    )
+    if r365 is None:
+        return False
+    return upsert_365(conn, schedule_id, r365)
 
 
 def _export_csv(data: list[dict], out_path: Path) -> None:
@@ -183,10 +153,10 @@ def _export_csv(data: list[dict], out_path: Path) -> None:
         writer.writerows(data)
 
 
-def fetch_match_asian_handicap_list(schedule_id: str | int) -> dict:
-    """Fetch, parse, and persist Asian handicap odds for a given match to SQLite.
+def fetch_match_asian_handicap_list(schedule_id: str | int) -> bool:
+    """Fetch, parse, and persist Bet365 Asian handicap odds for a given match.
 
-    Returns a dict with inserted/replaced counts per table.
+    Returns True if the Bet365 record was written, False otherwise.
     """
     from src.db import get_conn
 
@@ -207,24 +177,24 @@ if __name__ == "__main__":
     target_id = "2941716"
     docs_dir = Path(__file__).parent.parent.parent / "docs"
     print(f"Fetching Asian handicap odds for match {target_id} ...")
-    # save_dir dumps raw HTML to docs/ for structure inspection if parsing fails
     html = _fetch_html(target_id, save_dir=docs_dir)
     records = _parse_list(html)
-    print(f"Total companies : {len(records)}")
+    print(f"Total companies parsed : {len(records)}")
 
-    if records:
-        first = records[0]
-        print(f"company_name    : {first.get('company_name')}")
-        print(f"open  H/HC/A    : {first.get('open_home')} / {first.get('open_handicap')} / {first.get('open_away')}")
-        print(f"cur   H/HC/A    : {first.get('cur_home')} / {first.get('cur_handicap')} / {first.get('cur_away')}")
+    r365 = next((r for r in records if r.get("company_id") == str(COMPANY_365)), None)
+    if r365:
+        print(f"Bet365 open  H/HC/A : {r365.get('open_home')} / {r365.get('open_handicap')} / {r365.get('open_away')}")
+        print(f"Bet365 cur   H/HC/A : {r365.get('cur_home')} / {r365.get('cur_handicap')} / {r365.get('cur_away')}")
+    else:
+        print("Bet365 : not found in response")
 
     conn = get_conn()
     match_exists = conn.execute(
         "SELECT 1 FROM matches WHERE schedule_id = ?", (int(target_id),)
     ).fetchone()
     if match_exists:
-        counts = _save_to_db(conn, int(target_id), records)
-        print(f"DB written : {counts}")
+        written = _save_to_db(conn, int(target_id), records)
+        print(f"DB written : {written}")
     else:
         print(f"[SKIP] Match {target_id} not in 'matches' table — DB write skipped.")
         print("       Run match_list fetch first, then retry.")

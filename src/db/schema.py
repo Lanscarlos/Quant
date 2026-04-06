@@ -115,24 +115,12 @@ _DDL = [
     "CREATE INDEX IF NOT EXISTS idx_recent_match ON match_recent(schedule_id)",
 
     # ------------------------------------------------------------------
-    # 6. companies — 博彩公司字典
+    # 6. odds_wh — 威廉希尔欧赔快照
     # ------------------------------------------------------------------
     """
-    CREATE TABLE IF NOT EXISTS companies (
-        company_id   INTEGER PRIMARY KEY,
-        company_name TEXT    NOT NULL,
-        label        TEXT
-    )
-    """,
-
-    # ------------------------------------------------------------------
-    # 7. match_odds — 欧赔快照
-    # ------------------------------------------------------------------
-    """
-    CREATE TABLE IF NOT EXISTS match_odds (
-        record_id         INTEGER PRIMARY KEY,
-        schedule_id       INTEGER NOT NULL,
-        company_id        INTEGER NOT NULL REFERENCES companies(company_id),
+    CREATE TABLE IF NOT EXISTS odds_wh (
+        schedule_id       INTEGER PRIMARY KEY,
+        record_id         INTEGER,
         open_win          REAL,
         open_draw         REAL,
         open_lose         REAL,
@@ -154,23 +142,17 @@ _DDL = [
         hist_kelly_draw   REAL,
         hist_kelly_lose   REAL,
         change_time       TEXT,
-        flag1             INTEGER,
-        flag2             INTEGER,
-        fetched_at        TEXT    NOT NULL DEFAULT (datetime('now', '+8 hours')),
-        UNIQUE(schedule_id, company_id)
+        fetched_at        TEXT NOT NULL DEFAULT (datetime('now', '+8 hours'))
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_odds_match ON match_odds(schedule_id)",
 
     # ------------------------------------------------------------------
-    # 8. odds_history — 赔率历史变动
+    # 7. odds_wh_history — 威廉希尔欧赔历史
     # ------------------------------------------------------------------
     """
-    CREATE TABLE IF NOT EXISTS odds_history (
+    CREATE TABLE IF NOT EXISTS odds_wh_history (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
-        record_id    INTEGER NOT NULL,
         schedule_id  INTEGER NOT NULL,
-        company_id   INTEGER NOT NULL,
         win          REAL,
         draw         REAL,
         lose         REAL,
@@ -186,41 +168,95 @@ _DDL = [
         win_dir      TEXT CHECK(win_dir  IN ('up', 'down', 'unchanged')),
         draw_dir     TEXT CHECK(draw_dir IN ('up', 'down', 'unchanged')),
         lose_dir     TEXT CHECK(lose_dir IN ('up', 'down', 'unchanged')),
-        UNIQUE(record_id, change_time)
+        UNIQUE(schedule_id, change_time)
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_odds_history_rid   ON odds_history(record_id)",
-    "CREATE INDEX IF NOT EXISTS idx_odds_history_match ON odds_history(schedule_id)",
-    "CREATE INDEX IF NOT EXISTS idx_odds_history_lookup ON odds_history(schedule_id, company_id, is_opening, change_time DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_wh_history_match  ON odds_wh_history(schedule_id)",
+    "CREATE INDEX IF NOT EXISTS idx_wh_history_lookup ON odds_wh_history(schedule_id, is_opening, change_time DESC)",
 
     # ------------------------------------------------------------------
-    # 9. match_asian_odds — 亚让赔率快照
+    # 8. odds_coral — 立博欧赔快照
     # ------------------------------------------------------------------
     """
-    CREATE TABLE IF NOT EXISTS match_asian_odds (
-        id             INTEGER PRIMARY KEY AUTOINCREMENT,
-        schedule_id    INTEGER NOT NULL REFERENCES matches(schedule_id) ON DELETE CASCADE,
-        company_id     INTEGER NOT NULL REFERENCES companies(company_id),
-        open_handicap  TEXT,
-        open_home      REAL,
-        open_away      REAL,
-        cur_handicap   TEXT,
-        cur_home       REAL,
-        cur_away       REAL,
-        fetched_at     TEXT    NOT NULL DEFAULT (datetime('now', '+8 hours')),
-        UNIQUE(schedule_id, company_id)
+    CREATE TABLE IF NOT EXISTS odds_coral (
+        schedule_id       INTEGER PRIMARY KEY,
+        record_id         INTEGER,
+        open_win          REAL,
+        open_draw         REAL,
+        open_lose         REAL,
+        open_win_prob     REAL,
+        open_draw_prob    REAL,
+        open_lose_prob    REAL,
+        open_payout_rate  REAL,
+        cur_win           REAL,
+        cur_draw          REAL,
+        cur_lose          REAL,
+        cur_win_prob      REAL,
+        cur_draw_prob     REAL,
+        cur_lose_prob     REAL,
+        cur_payout_rate   REAL,
+        kelly_win         REAL,
+        kelly_draw        REAL,
+        kelly_lose        REAL,
+        hist_kelly_win    REAL,
+        hist_kelly_draw   REAL,
+        hist_kelly_lose   REAL,
+        change_time       TEXT,
+        fetched_at        TEXT NOT NULL DEFAULT (datetime('now', '+8 hours'))
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_asian_odds_match ON match_asian_odds(schedule_id)",
 
     # ------------------------------------------------------------------
-    # 10. asian_odds_history — 亚让赔率历史变动
+    # 9. odds_coral_history — 立博欧赔历史
     # ------------------------------------------------------------------
     """
-    CREATE TABLE IF NOT EXISTS asian_odds_history (
+    CREATE TABLE IF NOT EXISTS odds_coral_history (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
         schedule_id  INTEGER NOT NULL,
-        company_id   INTEGER NOT NULL,
+        win          REAL,
+        draw         REAL,
+        lose         REAL,
+        win_prob     REAL,
+        draw_prob    REAL,
+        lose_prob    REAL,
+        payout_rate  REAL,
+        kelly_win    REAL,
+        kelly_draw   REAL,
+        kelly_lose   REAL,
+        change_time  TEXT    NOT NULL,
+        is_opening   INTEGER NOT NULL DEFAULT 0,
+        win_dir      TEXT CHECK(win_dir  IN ('up', 'down', 'unchanged')),
+        draw_dir     TEXT CHECK(draw_dir IN ('up', 'down', 'unchanged')),
+        lose_dir     TEXT CHECK(lose_dir IN ('up', 'down', 'unchanged')),
+        UNIQUE(schedule_id, change_time)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_coral_history_match  ON odds_coral_history(schedule_id)",
+    "CREATE INDEX IF NOT EXISTS idx_coral_history_lookup ON odds_coral_history(schedule_id, is_opening, change_time DESC)",
+
+    # ------------------------------------------------------------------
+    # 10. asian_odds_365 — Bet365 亚盘快照
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS asian_odds_365 (
+        schedule_id   INTEGER PRIMARY KEY REFERENCES matches(schedule_id) ON DELETE CASCADE,
+        open_handicap TEXT,
+        open_home     REAL,
+        open_away     REAL,
+        cur_handicap  TEXT,
+        cur_home      REAL,
+        cur_away      REAL,
+        fetched_at    TEXT NOT NULL DEFAULT (datetime('now', '+8 hours'))
+    )
+    """,
+
+    # ------------------------------------------------------------------
+    # 11. asian_odds_365_history — Bet365 亚盘历史
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS asian_odds_365_history (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        schedule_id  INTEGER NOT NULL,
         change_time  TEXT    NOT NULL,
         score        TEXT,
         home_odds    REAL,
@@ -229,11 +265,10 @@ _DDL = [
         is_opening   INTEGER NOT NULL DEFAULT 0,
         home_dir     TEXT CHECK(home_dir IN ('up', 'down', 'unchanged')),
         away_dir     TEXT CHECK(away_dir IN ('up', 'down', 'unchanged')),
-        UNIQUE(schedule_id, company_id, change_time)
+        UNIQUE(schedule_id, change_time)
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_asian_history_match ON asian_odds_history(schedule_id)",
-    "CREATE INDEX IF NOT EXISTS idx_asian_history_co    ON asian_odds_history(schedule_id, company_id)",
+    "CREATE INDEX IF NOT EXISTS idx_365_history_match ON asian_odds_365_history(schedule_id)",
 ]
 
 
