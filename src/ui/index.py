@@ -1,7 +1,7 @@
 from nicegui import ui
 from src.ui.frame import navigation_bar
 from src.ui.panel import home, info
-from src.ui.page import dashboard, match_list, match_detail
+from src.ui.page import dashboard, match_list
 from src.ui.page.detail import index as detail_index
 from src.ui.router import Router
 
@@ -18,12 +18,7 @@ def render():
 
     router = Router()
 
-    def _go_to_detail(mid: int):
-        match_detail.load(mid)
-        router.navigate('match_detail')
-
-    router.add('match_list',   lambda: match_list.render(on_match_click=_go_to_detail))
-    router.add('match_detail', lambda: match_detail.render(on_back=lambda: router.navigate('match_list')))
+    router.add('match_list',   lambda: match_list.render(on_match_click=None))
     router.add('analysis',     detail_index.render)
     router.add('info',         info.render)
     router.add('settings',     lambda: ui.label('⚙️ 设置页').classes('text-2xl'))
