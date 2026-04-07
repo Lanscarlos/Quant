@@ -13,7 +13,7 @@ from datetime import datetime
 
 from nicegui import run
 
-from src.sync.coordinator import (
+from src.service.freshness import (
     should_fetch_detail,
     should_fetch_odds,
     should_fetch_asian_odds,

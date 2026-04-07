@@ -13,7 +13,7 @@ from nicegui import ui, run
 from src.db import get_conn
 from src.service.match_list import fetch_match_list
 from src.service.browser_filter import get_filtered_match_ids
-from src.sync.coordinator import should_fetch_match_list
+from src.service.freshness import should_fetch_match_list
 
 
 _TABLE_COLS = [
