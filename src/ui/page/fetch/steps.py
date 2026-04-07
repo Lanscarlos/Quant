@@ -39,7 +39,7 @@ class StepMatchDetail:
 
     @staticmethod
     async def fetch(mid: str, ctx: dict) -> None:
-        from src.service.archived.match_detail import fetch_match_all
+        from src.service.match_detail import fetch_match_all
         result = await run.io_bound(fetch_match_all, mid)
         ctx.update(result)
 
@@ -78,8 +78,8 @@ class StepEuroOdds:
 
     @staticmethod
     async def fetch(mid: str, ctx: dict) -> None:
-        from src.service.archived.match_odds_list import fetch_match_odds_with_record_ids
-        record_ids = await run.io_bound(fetch_match_odds_with_record_ids, mid)
+        from src.service.euro_odds import fetch_euro_odds_with_record_ids
+        record_ids = await run.io_bound(fetch_euro_odds_with_record_ids, mid)
         ctx['record_ids'] = record_ids
 
 
@@ -100,8 +100,8 @@ class StepAsianOdds:
 
     @staticmethod
     async def fetch(mid: str, ctx: dict) -> None:
-        from src.service.archived.match_asian_handicap_list import fetch_match_asian_handicap_list
-        await run.io_bound(fetch_match_asian_handicap_list, mid)
+        from src.service.asian_odds import fetch_asian_odds
+        await run.io_bound(fetch_asian_odds, mid)
 
 
 # ── 阶段 4: 欧赔变盘历史 ────────────────────────────────────────────────────────
@@ -121,8 +121,8 @@ class StepEuroHistory:
 
     @staticmethod
     async def fetch(mid: str, ctx: dict) -> None:
-        from src.service.archived.match_odds_history import (
-            fetch_odds_history, COMPANY_WH, COMPANY_CORAL,
+        from src.service.euro_odds_history import (
+            fetch_euro_odds_history, COMPANY_WH, COMPANY_CORAL,
         )
 
         record_ids = ctx.get('record_ids') or _load_record_ids_from_db(int(mid))
@@ -132,7 +132,7 @@ class StepEuroHistory:
         for cid in (COMPANY_WH, COMPANY_CORAL):
             rid = record_ids.get(cid)
             if rid:
-                tasks.append(run.io_bound(fetch_odds_history, rid, mid, cid, match_year))
+                tasks.append(run.io_bound(fetch_euro_odds_history, rid, mid, cid, match_year))
 
         if tasks:
             await asyncio.gather(*tasks)
@@ -157,9 +157,9 @@ class StepAsianHistory:
 
     @staticmethod
     async def fetch(mid: str, ctx: dict) -> None:
-        from src.service.archived.match_asian_handicap_history import fetch_asian_handicap_history
+        from src.service.asian_odds_history import fetch_asian_odds_history
         match_year = ctx.get('match_year') or _get_match_year(int(mid))
-        await run.io_bound(fetch_asian_handicap_history, mid, match_year)
+        await run.io_bound(fetch_asian_odds_history, mid, match_year)
 
 
 # ── 有序步骤列表 & 分阶段分组 ────────────────────────────────────────────────────

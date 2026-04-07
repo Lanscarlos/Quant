@@ -2,9 +2,9 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.db import get_conn
-from src.service.archived.match_detail import fetch_match_time
-from src.service.archived.match_odds_history import fetch_odds_history
-from src.service.archived.match_odds_list import fetch_match_odds_list
+from src.service.match_detail import fetch_match_time
+from src.service.euro_odds_history import fetch_euro_odds_history
+from src.service.euro_odds import fetch_euro_odds
 
 from .formatters import fmt_float, fmt_percent, parse_year
 
@@ -244,7 +244,7 @@ def fetch_recent_odds(mid: int) -> None:
         ).fetchone()
         if not has_odds:
             try:
-                fetch_match_odds_list(match_id)
+                fetch_euro_odds(match_id)
             except Exception:
                 return
         has_history = c.execute(
@@ -256,7 +256,7 @@ def fetch_recent_odds(mid: int) -> None:
             ).fetchone()
             if odds_row and odds_row[0]:
                 try:
-                    fetch_odds_history(odds_row[0], match_id, _WH_COMPANY_ID, parse_year(date_str))
+                    fetch_euro_odds_history(odds_row[0], match_id, _WH_COMPANY_ID, parse_year(date_str))
                 except Exception:
                     pass
         if existing_time is None:
