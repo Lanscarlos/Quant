@@ -1,6 +1,5 @@
 from nicegui import ui
 from src.ui.frame import navigation_bar
-from src.ui.panel import home, info
 from src.ui.page import dashboard, match_list
 from src.ui.page.fetch import index as fetch_index
 from src.ui.page.conclusion import index as conclusion_index
@@ -37,7 +36,6 @@ def render():
     router.add('match_list',   lambda: match_list.render(on_match_click=_on_match_click))
     router.add('fetch',        lambda: fetch_index.render(on_complete=_on_fetch_complete))
     router.add('conclusion',   conclusion_index.render)
-    router.add('info',         info.render)
     router.add('settings',     lambda: ui.label('⚙️ 设置页').classes('text-2xl'))
 
     with ui.row().classes('w-full h-screen gap-0'):
