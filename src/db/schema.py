@@ -167,7 +167,8 @@ _DDL = [
         hist_kelly_draw   REAL,
         hist_kelly_lose   REAL,
         change_time       TEXT,
-        fetched_at        TEXT NOT NULL DEFAULT (datetime('now', '+8 hours'))
+        fetched_at        TEXT NOT NULL DEFAULT (datetime('now', '+8 hours')),
+        no_data           INTEGER NOT NULL DEFAULT 0
     )
     """,
 
@@ -308,6 +309,7 @@ def create_all(conn: sqlite3.Connection) -> None:
 def _migrate(conn: sqlite3.Connection) -> None:
     """Apply incremental schema migrations for existing databases."""
     _add_column_if_missing(conn, "match_recent", "match_time", "TEXT")
+    _add_column_if_missing(conn, "odds_wh", "no_data", "INTEGER NOT NULL DEFAULT 0")
 
 
 def _add_column_if_missing(

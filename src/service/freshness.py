@@ -145,9 +145,16 @@ def should_fetch_history(schedule_id: int) -> bool:
 
 def should_fetch_asian_history(schedule_id: int) -> bool:
     """True → 调用 fetch_asian_handicap_history()；False → 直接读 DB。"""
-    count = get_conn().execute(
+    conn = get_conn()
+    count = conn.execute(
         "SELECT COUNT(*) FROM asian_odds_365_history WHERE schedule_id = ?", (schedule_id,)
     ).fetchone()[0]
     if _match_status(schedule_id) == -1:
-        return count == 0
+        if count > 0:
+            return False  # 有历史数据，跳过
+        # 历史为空但快照存在，说明已尝试过（页面本身无数据）
+        snap = conn.execute(
+            "SELECT 1 FROM asian_odds_365 WHERE schedule_id = ?", (schedule_id,)
+        ).fetchone()
+        return snap is None
     return True

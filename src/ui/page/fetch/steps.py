@@ -55,6 +55,31 @@ class StepSubOdds:
 
     @staticmethod
     def should_skip(mid: int) -> tuple[bool, str]:
+        from src.db import get_conn
+        conn = get_conn()
+        total = conn.execute(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT match_id FROM match_recent WHERE schedule_id = ?
+                UNION
+                SELECT match_id FROM match_h2h    WHERE schedule_id = ?
+            )
+            """, (mid, mid)
+        ).fetchone()[0]
+        if total == 0:
+            return False, ''
+        covered = conn.execute(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT match_id FROM match_recent WHERE schedule_id = ?
+                UNION
+                SELECT match_id FROM match_h2h    WHERE schedule_id = ?
+            ) sub
+            JOIN odds_wh ow ON ow.schedule_id = sub.match_id
+            """, (mid, mid)
+        ).fetchone()[0]
+        if covered >= total:
+            return True, '子比赛赔率已存在，已跳过'
         return False, ''
 
     @staticmethod

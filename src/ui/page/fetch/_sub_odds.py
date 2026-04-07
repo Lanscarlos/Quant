@@ -55,8 +55,15 @@ def fetch_sub_odds(mid: int, tracker=None) -> None:
             ).fetchone()
             if not has_odds:
                 try:
-                    fetch_euro_odds(match_id)
+                    result = fetch_euro_odds(match_id)
                 except Exception:
+                    result = {}
+                if not result.get('wh'):
+                    with c:
+                        c.execute(
+                            "INSERT OR IGNORE INTO odds_wh (schedule_id, no_data) VALUES (?, 1)",
+                            (match_id,),
+                        )
                     return
 
             # 2) 欧赔变赔历史
