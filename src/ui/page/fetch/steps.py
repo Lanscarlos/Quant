@@ -46,11 +46,28 @@ class StepMatchDetail:
 
 # ── 阶段 2: 欧赔数据 ────────────────────────────────────────────────────────────
 
+class StepSubOdds:
+    KEY   = 'sub_odds'
+    ICON  = 'query_stats'
+    LABEL = '子比赛赔率 (近六场 + 交手)'
+    PHASE = 2
+    DEPENDS_ON: list[str] = ['match_detail']
+
+    @staticmethod
+    def should_skip(mid: int) -> tuple[bool, str]:
+        return False, ''
+
+    @staticmethod
+    async def fetch(mid: str, ctx: dict) -> None:
+        from ._sub_odds import fetch_sub_odds
+        await run.io_bound(fetch_sub_odds, int(mid))
+
+
 class StepEuroOdds:
     KEY   = 'euro_odds'
     ICON  = 'analytics'
     LABEL = '欧赔数据 (威廉 / 立博)'
-    PHASE = 2
+    PHASE = 3
     DEPENDS_ON: list[str] = []
 
     @staticmethod
@@ -66,13 +83,13 @@ class StepEuroOdds:
         ctx['record_ids'] = record_ids
 
 
-# ── 阶段 2: 365 亚盘数据 ────────────────────────────────────────────────────────
+# ── 阶段 3: 365 亚盘数据 ────────────────────────────────────────────────────────
 
 class StepAsianOdds:
     KEY   = 'asian_odds'
     ICON  = 'filter_list'
     LABEL = '365 亚盘数据'
-    PHASE = 2
+    PHASE = 3
     DEPENDS_ON: list[str] = []
 
     @staticmethod
@@ -87,13 +104,13 @@ class StepAsianOdds:
         await run.io_bound(fetch_match_asian_handicap_list, mid)
 
 
-# ── 阶段 3: 欧赔变盘历史 ────────────────────────────────────────────────────────
+# ── 阶段 4: 欧赔变盘历史 ────────────────────────────────────────────────────────
 
 class StepEuroHistory:
     KEY   = 'euro_history'
     ICON  = 'timeline'
     LABEL = '欧赔变盘历史'
-    PHASE = 3
+    PHASE = 4
     DEPENDS_ON: list[str] = ['euro_odds']
 
     @staticmethod
@@ -123,13 +140,13 @@ class StepEuroHistory:
             raise ValueError('未找到威廉/立博的 record_id')
 
 
-# ── 阶段 3: 365 亚盘变盘历史 ────────────────────────────────────────────────────
+# ── 阶段 4: 365 亚盘变盘历史 ────────────────────────────────────────────────────
 
 class StepAsianHistory:
     KEY   = 'asian_history'
     ICON  = 'swap_vert'
     LABEL = '365 亚盘变盘历史'
-    PHASE = 3
+    PHASE = 4
     DEPENDS_ON: list[str] = []
 
     @staticmethod
@@ -147,7 +164,7 @@ class StepAsianHistory:
 
 # ── 有序步骤列表 & 分阶段分组 ────────────────────────────────────────────────────
 
-STEPS = [StepMatchDetail, StepEuroOdds, StepAsianOdds, StepEuroHistory, StepAsianHistory]
+STEPS = [StepMatchDetail, StepSubOdds, StepEuroOdds, StepAsianOdds, StepEuroHistory, StepAsianHistory]
 
 PHASES: list[list] = []
 _phase_map: dict[int, list] = {}
