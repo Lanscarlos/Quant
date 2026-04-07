@@ -188,8 +188,16 @@ def render(on_complete=None):
                     return
 
                 _update(step.KEY, 'running')
+
+                # 线程安全的进度回调：io_bound 线程调用 → 调度到事件循环更新 UI
+                loop = asyncio.get_running_loop()
+                key  = step.KEY
+
+                def _on_progress(msg: str) -> None:
+                    loop.call_soon_threadsafe(_update, key, 'running', msg)
+
                 try:
-                    await step.fetch(mid_str, ctx)
+                    await step.fetch(mid_str, ctx, _on_progress)
                     _update(step.KEY, 'done')
                 except Exception as exc:
                     _update(step.KEY, 'error', str(exc)[:80])

@@ -11,7 +11,7 @@ from src.ui.page.conclusion.formatters import parse_year
 _WH_COMPANY_ID = 115
 
 
-def fetch_sub_odds(mid: int) -> None:
+def fetch_sub_odds(mid: int, on_progress=None) -> None:
     conn = get_conn()
 
     # 近六场子比赛
@@ -35,6 +35,12 @@ def fetch_sub_odds(mid: int) -> None:
     for r in h2h_rows:
         if r[0] not in tasks:
             tasks[r[0]] = (r[1], None, False)
+
+    total = len(tasks)
+    done_count = [0]  # list 作为可变容器，兼容多线程 GIL 保护
+
+    if on_progress and total:
+        on_progress(f"共 {total} 场子比赛，准备处理...")
 
     def _process_one(match_id: int, date_str: str | None,
                      existing_time: str | None, is_recent: bool) -> None:
@@ -76,6 +82,10 @@ def fetch_sub_odds(mid: int) -> None:
                     "WHERE schedule_id = ? AND match_id = ?",
                     (mt or "", mid, match_id),
                 )
+
+        done_count[0] += 1
+        if on_progress:
+            on_progress(f"处理子比赛 ({done_count[0]}/{total})")
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [

@@ -38,9 +38,9 @@ class StepMatchDetail:
         return False, ''
 
     @staticmethod
-    async def fetch(mid: str, ctx: dict) -> None:
+    async def fetch(mid: str, ctx: dict, on_progress=None) -> None:
         from src.service.match_detail import fetch_match_all
-        result = await run.io_bound(fetch_match_all, mid)
+        result = await run.io_bound(fetch_match_all, mid, on_progress)
         ctx.update(result)
 
 
@@ -58,9 +58,9 @@ class StepSubOdds:
         return False, ''
 
     @staticmethod
-    async def fetch(mid: str, ctx: dict) -> None:
+    async def fetch(mid: str, ctx: dict, on_progress=None) -> None:
         from ._sub_odds import fetch_sub_odds
-        await run.io_bound(fetch_sub_odds, int(mid))
+        await run.io_bound(fetch_sub_odds, int(mid), on_progress)
 
 
 class StepEuroOdds:
@@ -77,7 +77,7 @@ class StepEuroOdds:
         return False, ''
 
     @staticmethod
-    async def fetch(mid: str, ctx: dict) -> None:
+    async def fetch(mid: str, ctx: dict, on_progress=None) -> None:
         from src.service.euro_odds import fetch_euro_odds_with_record_ids
         record_ids = await run.io_bound(fetch_euro_odds_with_record_ids, mid)
         ctx['record_ids'] = record_ids
@@ -99,7 +99,7 @@ class StepAsianOdds:
         return False, ''
 
     @staticmethod
-    async def fetch(mid: str, ctx: dict) -> None:
+    async def fetch(mid: str, ctx: dict, on_progress=None) -> None:
         from src.service.asian_odds import fetch_asian_odds
         await run.io_bound(fetch_asian_odds, mid)
 
@@ -120,7 +120,7 @@ class StepEuroHistory:
         return False, ''
 
     @staticmethod
-    async def fetch(mid: str, ctx: dict) -> None:
+    async def fetch(mid: str, ctx: dict, on_progress=None) -> None:
         from src.service.euro_odds_history import (
             fetch_euro_odds_history, COMPANY_WH, COMPANY_CORAL,
         )
@@ -156,7 +156,7 @@ class StepAsianHistory:
         return False, ''
 
     @staticmethod
-    async def fetch(mid: str, ctx: dict) -> None:
+    async def fetch(mid: str, ctx: dict, on_progress=None) -> None:
         from src.service.asian_odds_history import fetch_asian_odds_history
         match_year = ctx.get('match_year') or _get_match_year(int(mid))
         await run.io_bound(fetch_asian_odds_history, mid, match_year)

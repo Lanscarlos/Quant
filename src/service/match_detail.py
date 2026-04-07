@@ -151,9 +151,11 @@ def _parse_detail(html: str) -> dict:
 
 # ── 公开 API ─────────────────────────────────────────────────────────────────
 
-def fetch_match_all(match_id: str | int) -> dict:
+def fetch_match_all(match_id: str | int, on_progress=None) -> dict:
     """一次 HTTP 请求抓取并持久化: 排名 + 近期 + 交手。
 
+    Args:
+        on_progress: 可选回调 ``(msg: str) -> None``，用于向调用方上报进度。
     Returns: {'match_time': str, 'match_year': int}
     """
     from datetime import datetime
@@ -162,14 +164,28 @@ def fetch_match_all(match_id: str | int) -> dict:
     from src.db.repo.recent_matches import upsert_recent_matches
     from src.db.repo.h2h_matches import upsert_h2h_matches
 
+    def _p(msg: str) -> None:
+        if on_progress:
+            on_progress(msg)
+
     conn = get_conn()
+
+    _p("下载页面 HTML...")
     html = _fetch_html(match_id)
+
+    _p("解析基本信息 + 联赛排名...")
     record = _parse_detail(html)
 
+    _p("保存联赛排名...")
     upsert_standings(conn, record)
+
+    _p("保存近期比赛...")
     upsert_recent_matches(conn, record)
 
+    _p("解析交手记录...")
     h2h_records = _parse_match_array(html, "v_data", limit=20)
+
+    _p(f"保存交手记录 ({len(h2h_records)} 场)...")
     upsert_h2h_matches(conn, int(match_id), h2h_records)
 
     match_time = record.get("match_time", "")
