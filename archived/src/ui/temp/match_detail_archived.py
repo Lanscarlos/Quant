@@ -15,7 +15,7 @@ from src.db import get_conn
 from src.service.archived.match_detail import fetch_match_detail, fetch_match_time
 from src.service.archived.match_odds_history import fetch_odds_history
 from src.service.archived.match_odds_list import fetch_match_odds_list
-from src.sync.coordinator import should_fetch_detail, should_fetch_odds
+from archived.src.sync.coordinator import should_fetch_detail, should_fetch_odds
 
 _state: dict = {'match_id': None, 'sections': None, 'auto_fetched': False, 'fetching': False}
 _refresh_fn: list = [None]
