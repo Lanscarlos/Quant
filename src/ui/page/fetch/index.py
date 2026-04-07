@@ -254,6 +254,7 @@ def render(on_complete=None):
 
         # 只要没有用户中断，即使部分步骤失败也跳转结论页
         if not state['abort'] and on_complete:
+            await asyncio.sleep(1)
             on_complete(state['mid'])
 
     fetch_btn.on_click(_run_fetch)
