@@ -7,6 +7,7 @@
   - 错误隔离: 非依赖步骤失败不影响其他步骤
   - 新鲜度检查: 数据仍然新鲜时自动跳过
   - 步骤间通过 ctx 传递数据 (record_ids, match_year)
+  - 每个步骤内可展示独立子任务行，实时追踪进度
 
 External API:
   render() — registered with the Router, returns trigger(mid) callback
@@ -17,6 +18,7 @@ import re
 from nicegui import ui
 
 from .steps import STEPS, PHASES
+from .progress import ProgressTracker
 
 _STATUS_ICON = {
     'pending':  ('radio_button_unchecked', 'text-gray-300'),
@@ -25,6 +27,14 @@ _STATUS_ICON = {
     'skipped':  ('check_circle',           'text-slate-400'),
     'error':    ('cancel',                 'text-red-500'),
     'stopped':  ('do_not_disturb_on',      'text-orange-400'),
+}
+
+# 子任务用更小、更淡的图标
+_SUB_STATUS_ICON = {
+    'pending': ('circle',          'text-slate-300'),
+    'running': ('hourglass_empty', 'text-blue-400'),
+    'done':    ('check_circle',    'text-green-400'),
+    'error':   ('cancel',          'text-red-400'),
 }
 
 _STATUS_LABEL = {
@@ -48,17 +58,19 @@ _CIRCLE_CLS = {
 
 def render(on_complete=None):
     state = {
-        'running':  False,
-        'abort':    False,
-        'mid':      None,
-        'statuses': {s.KEY: 'pending' for s in STEPS},
-        'messages': {s.KEY: ''        for s in STEPS},
+        'running':   False,
+        'abort':     False,
+        'mid':       None,
+        'statuses':  {s.KEY: 'pending' for s in STEPS},
+        'messages':  {s.KEY: ''        for s in STEPS},
+        'sub_tasks': {s.KEY: []        for s in STEPS},
     }
 
     def _reset():
         state.update(running=False, abort=False, mid=None)
-        state['statuses'] = {s.KEY: 'pending' for s in STEPS}
-        state['messages'] = {s.KEY: ''        for s in STEPS}
+        state['statuses']  = {s.KEY: 'pending' for s in STEPS}
+        state['messages']  = {s.KEY: ''        for s in STEPS}
+        state['sub_tasks'] = {s.KEY: []        for s in STEPS}
 
     # ── 布局 ──────────────────────────────────────────────────────────────────
     with ui.column().classes('w-full h-full gap-0'):
@@ -82,8 +94,9 @@ def render(on_complete=None):
         # ── 抓取进度 ─────────────────────────────────────────────────────
         with ui.scroll_area().classes('flex-1 w-full'):
             with ui.column().classes('w-full p-4'):
-                refresh_fns: dict = {}
-                circle_fns:  dict = {}
+                refresh_fns:     dict = {}
+                circle_fns:      dict = {}
+                sub_refresh_fns: dict = {}
 
                 for idx, step in enumerate(STEPS, start=1):
 
@@ -107,7 +120,7 @@ def render(on_complete=None):
                                 if number < len(STEPS):
                                     ui.element('div').classes('w-px bg-slate-200 mt-1').style('height: 48px')
 
-                            # 右：步骤标题 + 状态
+                            # 右：步骤标题 + 状态行 + 子任务区域
                             with ui.column().classes('flex-1 gap-1 pb-4'):
                                 with ui.row().classes('items-center gap-2 h-7'):
                                     ui.icon(icon).classes('text-slate-400 text-base')
@@ -124,6 +137,28 @@ def render(on_complete=None):
 
                                 _status()
                                 refresh_fns[k] = _status
+
+                                # 子任务列表区：每个 SubTask 独享一行，互不覆盖
+                                @ui.refreshable
+                                def _sub_tasks(k=k):
+                                    tasks = state['sub_tasks'].get(k, [])
+                                    if not tasks:
+                                        return
+                                    with ui.column().classes('gap-0.5 mt-1 pl-1'):
+                                        for st in tasks:
+                                            ico, cls = _SUB_STATUS_ICON.get(
+                                                st.status, ('circle', 'text-slate-300')
+                                            )
+                                            with ui.row().classes('items-center gap-1.5'):
+                                                ui.icon(ico).classes(f'{cls} text-sm')
+                                                text = (
+                                                    f'{st.label}  {st.msg}'
+                                                    if st.msg else st.label
+                                                )
+                                                ui.label(text).classes('text-xs text-slate-400')
+
+                                _sub_tasks()
+                                sub_refresh_fns[k] = _sub_tasks
 
                     _make_row(step.KEY, idx, step.LABEL, step.ICON)
 
@@ -156,6 +191,7 @@ def render(on_complete=None):
         for s in STEPS:
             refresh_fns[s.KEY].refresh()
             circle_fns[s.KEY].refresh()
+            sub_refresh_fns[s.KEY].refresh()
 
         state.update(running=True, mid=int(mid_str))
         fetch_btn.disable()
@@ -189,15 +225,19 @@ def render(on_complete=None):
 
                 _update(step.KEY, 'running')
 
-                # 线程安全的进度回调：io_bound 线程调用 → 调度到事件循环更新 UI
+                # 为该步骤创建独立子任务列表，ProgressTracker 通过线程安全回调刷新 UI
+                key            = step.KEY
+                sub_task_list: list = []
+                state['sub_tasks'][key] = sub_task_list
                 loop = asyncio.get_running_loop()
-                key  = step.KEY
 
-                def _on_progress(msg: str) -> None:
-                    loop.call_soon_threadsafe(_update, key, 'running', msg)
+                def _schedule_refresh() -> None:
+                    loop.call_soon_threadsafe(sub_refresh_fns[key].refresh)
+
+                tracker = ProgressTracker(sub_task_list, _schedule_refresh)
 
                 try:
-                    await step.fetch(mid_str, ctx, _on_progress)
+                    await step.fetch(mid_str, ctx, tracker)
                     _update(step.KEY, 'done')
                 except Exception as exc:
                     _update(step.KEY, 'error', str(exc)[:80])

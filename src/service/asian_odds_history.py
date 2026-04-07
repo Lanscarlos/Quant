@@ -100,17 +100,26 @@ def _fetch_and_parse(mid: str | int) -> list[dict]:
 
 # ── 公开 API ─────────────────────────────────────────────────────────────────
 
-def fetch_asian_odds_history(mid: str | int, match_year: int) -> int:
+def fetch_asian_odds_history(mid: str | int, match_year: int, tracker=None) -> int:
     """抓取并持久化 Bet365 亚盘变盘历史。
 
     Args:
         mid:        赛事 schedule_id
         match_year: 赛事年份，用于补全 "MM-DD HH:MM" 时间戳
+        tracker:    可选 ProgressTracker，用于上报子步骤进度
     Returns: 写入行数
     """
+    from contextlib import nullcontext
     from src.db import get_conn
     from src.db.repo.asian_odds_history import upsert_365_history
 
+    def _t(key, label):
+        return tracker.task(key, label) if tracker else nullcontext()
+
     conn = get_conn()
-    records = _fetch_and_parse(mid)
-    return upsert_365_history(conn, int(mid), records, match_year)
+
+    with _t('fetch', '下载 Bet365 亚盘变盘历史'):
+        records = _fetch_and_parse(mid)
+
+    with _t('save', f'保存变盘历史 ({len(records)} 条)'):
+        return upsert_365_history(conn, int(mid), records, match_year)

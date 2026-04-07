@@ -124,14 +124,23 @@ def fetch_euro_odds(schedule_id: str | int) -> dict:
     return _save_to_db(conn, int(schedule_id), records)
 
 
-def fetch_euro_odds_with_record_ids(schedule_id: str | int) -> dict[int, int]:
+def fetch_euro_odds_with_record_ids(schedule_id: str | int, tracker=None) -> dict[int, int]:
     """抓取并持久化欧赔快照，同时返回 {company_id: record_id}。
 
     返回值用于后续拉取变赔历史。
     """
+    from contextlib import nullcontext
     from src.db import get_conn
 
+    def _t(key, label):
+        return tracker.task(key, label) if tracker else nullcontext()
+
     conn = get_conn()
-    records = _fetch_and_parse(schedule_id)
-    _save_to_db(conn, int(schedule_id), records)
+
+    with _t('fetch', '下载欧赔数据 JS'):
+        records = _fetch_and_parse(schedule_id)
+
+    with _t('save', f'保存威廉/立博赔率 ({len(records)} 条)'):
+        _save_to_db(conn, int(schedule_id), records)
+
     return _get_record_ids(records)

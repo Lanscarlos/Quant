@@ -11,7 +11,7 @@ from src.ui.page.conclusion.formatters import parse_year
 _WH_COMPANY_ID = 115
 
 
-def fetch_sub_odds(mid: int, on_progress=None) -> None:
+def fetch_sub_odds(mid: int, tracker=None) -> None:
     conn = get_conn()
 
     # 近六场子比赛
@@ -39,53 +39,57 @@ def fetch_sub_odds(mid: int, on_progress=None) -> None:
     total = len(tasks)
     done_count = [0]  # list 作为可变容器，兼容多线程 GIL 保护
 
-    if on_progress and total:
-        on_progress(f"共 {total} 场子比赛，准备处理...")
+    # 注册一个进度子任务，随完成数实时更新消息
+    progress_task = None
+    if tracker and total:
+        progress_task = tracker.task('progress', f'处理子比赛').start()
+        progress_task.update(f'(0/{total})')
 
     def _process_one(match_id: int, date_str: str | None,
                      existing_time: str | None, is_recent: bool) -> None:
         c = get_conn()
-
-        # 1) 欧赔快照
-        has_odds = c.execute(
-            "SELECT 1 FROM odds_wh WHERE schedule_id = ? LIMIT 1", (match_id,)
-        ).fetchone()
-        if not has_odds:
-            try:
-                fetch_euro_odds(match_id)
-            except Exception:
-                return
-
-        # 2) 欧赔变赔历史
-        has_history = c.execute(
-            "SELECT 1 FROM odds_wh_history WHERE schedule_id = ? LIMIT 1", (match_id,)
-        ).fetchone()
-        if not has_history:
-            odds_row = c.execute(
-                "SELECT record_id FROM odds_wh WHERE schedule_id = ?", (match_id,)
+        try:
+            # 1) 欧赔快照
+            has_odds = c.execute(
+                "SELECT 1 FROM odds_wh WHERE schedule_id = ? LIMIT 1", (match_id,)
             ).fetchone()
-            if odds_row and odds_row[0]:
+            if not has_odds:
                 try:
-                    fetch_euro_odds_history(
-                        odds_row[0], match_id, _WH_COMPANY_ID,
-                        parse_year(date_str),
-                    )
+                    fetch_euro_odds(match_id)
                 except Exception:
-                    pass
+                    return
 
-        # 3) 近六场的 match_time 补全（赛前半小时赔率计算依赖）
-        if is_recent and existing_time is None:
-            mt = fetch_match_time(match_id)
-            with c:
-                c.execute(
-                    "UPDATE match_recent SET match_time = ? "
-                    "WHERE schedule_id = ? AND match_id = ?",
-                    (mt or "", mid, match_id),
-                )
+            # 2) 欧赔变赔历史
+            has_history = c.execute(
+                "SELECT 1 FROM odds_wh_history WHERE schedule_id = ? LIMIT 1", (match_id,)
+            ).fetchone()
+            if not has_history:
+                odds_row = c.execute(
+                    "SELECT record_id FROM odds_wh WHERE schedule_id = ?", (match_id,)
+                ).fetchone()
+                if odds_row and odds_row[0]:
+                    try:
+                        fetch_euro_odds_history(
+                            odds_row[0], match_id, _WH_COMPANY_ID,
+                            parse_year(date_str),
+                        )
+                    except Exception:
+                        pass
 
-        done_count[0] += 1
-        if on_progress:
-            on_progress(f"处理子比赛 ({done_count[0]}/{total})")
+            # 3) 近六场的 match_time 补全（赛前半小时赔率计算依赖）
+            if is_recent and existing_time is None:
+                mt = fetch_match_time(match_id)
+                with c:
+                    c.execute(
+                        "UPDATE match_recent SET match_time = ? "
+                        "WHERE schedule_id = ? AND match_id = ?",
+                        (mt or "", mid, match_id),
+                    )
+        finally:
+            # 无论正常结束还是 return 提前退出，都确保计数器递增并刷新进度
+            done_count[0] += 1
+            if progress_task:
+                progress_task.update(f'({done_count[0]}/{total})')
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [
@@ -97,3 +101,7 @@ def fetch_sub_odds(mid: int, on_progress=None) -> None:
                 f.result()
             except Exception:
                 pass
+
+    # 线程池退出后所有任务必然已完成，统一将进度子任务标记为 done
+    if progress_task:
+        progress_task.done(f'({done_count[0]}/{total})')

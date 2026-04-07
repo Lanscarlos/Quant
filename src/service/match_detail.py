@@ -151,42 +151,42 @@ def _parse_detail(html: str) -> dict:
 
 # ── 公开 API ─────────────────────────────────────────────────────────────────
 
-def fetch_match_all(match_id: str | int, on_progress=None) -> dict:
+def fetch_match_all(match_id: str | int, tracker=None) -> dict:
     """一次 HTTP 请求抓取并持久化: 排名 + 近期 + 交手。
 
     Args:
-        on_progress: 可选回调 ``(msg: str) -> None``，用于向调用方上报进度。
+        tracker: 可选 ProgressTracker，用于向 UI 上报子步骤进度。
     Returns: {'match_time': str, 'match_year': int}
     """
+    from contextlib import nullcontext
     from datetime import datetime
     from src.db import get_conn
     from src.db.repo.standings import upsert_standings
     from src.db.repo.recent_matches import upsert_recent_matches
     from src.db.repo.h2h_matches import upsert_h2h_matches
 
-    def _p(msg: str) -> None:
-        if on_progress:
-            on_progress(msg)
+    def _t(key: str, label: str):
+        return tracker.task(key, label) if tracker else nullcontext()
 
     conn = get_conn()
 
-    _p("下载页面 HTML...")
-    html = _fetch_html(match_id)
+    with _t('html', '下载页面 HTML'):
+        html = _fetch_html(match_id)
 
-    _p("解析基本信息 + 联赛排名...")
-    record = _parse_detail(html)
+    with _t('parse', '解析基本信息 + 联赛排名'):
+        record = _parse_detail(html)
 
-    _p("保存联赛排名...")
-    upsert_standings(conn, record)
+    with _t('standings', '保存联赛排名'):
+        upsert_standings(conn, record)
 
-    _p("保存近期比赛...")
-    upsert_recent_matches(conn, record)
+    with _t('recent', '保存近期比赛'):
+        upsert_recent_matches(conn, record)
 
-    _p("解析交手记录...")
-    h2h_records = _parse_match_array(html, "v_data", limit=20)
+    with _t('h2h_parse', '解析交手记录'):
+        h2h_records = _parse_match_array(html, "v_data", limit=20)
 
-    _p(f"保存交手记录 ({len(h2h_records)} 场)...")
-    upsert_h2h_matches(conn, int(match_id), h2h_records)
+    with _t('h2h_save', f'保存交手记录 ({len(h2h_records)} 场)'):
+        upsert_h2h_matches(conn, int(match_id), h2h_records)
 
     match_time = record.get("match_time", "")
     try:

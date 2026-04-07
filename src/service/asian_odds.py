@@ -78,21 +78,28 @@ def _fetch_and_parse(mid: str | int) -> list[dict]:
 
 # ── 公开 API ─────────────────────────────────────────────────────────────────
 
-def fetch_asian_odds(schedule_id: str | int) -> bool:
+def fetch_asian_odds(schedule_id: str | int, tracker=None) -> bool:
     """抓取并持久化 Bet365 亚盘快照。
 
     Returns: True 表示写入成功，False 表示未找到 Bet365 数据
     """
+    from contextlib import nullcontext
     from src.db import get_conn
     from src.db.repo.asian_odds import upsert_365
 
-    conn = get_conn()
-    records = _fetch_and_parse(schedule_id)
+    def _t(key, label):
+        return tracker.task(key, label) if tracker else nullcontext()
 
-    r365 = next(
-        (r for r in records if r.get("company_id") == str(COMPANY_365)),
-        None,
-    )
-    if r365 is None:
-        return False
-    return upsert_365(conn, int(schedule_id), r365)
+    conn = get_conn()
+
+    with _t('fetch', '下载亚盘页面'):
+        records = _fetch_and_parse(schedule_id)
+
+    with _t('save', '保存 Bet365 亚盘'):
+        r365 = next(
+            (r for r in records if r.get("company_id") == str(COMPANY_365)),
+            None,
+        )
+        if r365 is None:
+            return False
+        return upsert_365(conn, int(schedule_id), r365)

@@ -92,6 +92,7 @@ def fetch_euro_odds_history(
     mid: str | int,
     cid: str | int,
     match_year: int,
+    tracker=None,
 ) -> int:
     """抓取并持久化某公司的欧赔变盘历史。
 
@@ -100,16 +101,28 @@ def fetch_euro_odds_history(
         mid:        赛事 schedule_id
         cid:        公司 ID (115=WH, 82=Coral)
         match_year: 赛事年份，用于补全 "MM-DD HH:MM" 时间戳
+        tracker:    可选 ProgressTracker，用于上报子步骤进度
     Returns: 写入行数
     """
+    from contextlib import nullcontext
     from src.db import get_conn
     from src.db.repo.odds_history import upsert_wh_history, upsert_coral_history
 
-    conn = get_conn()
-    records = _fetch_and_parse(rid, mid, cid)
+    is_wh = int(cid) == COMPANY_WH
+    company = '威廉希尔' if is_wh else '立博'
+    prefix  = 'wh' if is_wh else 'coral'
 
-    if int(cid) == COMPANY_WH:
-        return upsert_wh_history(conn, int(mid), records, match_year)
-    elif int(cid) == COMPANY_CORAL:
-        return upsert_coral_history(conn, int(mid), records, match_year)
+    def _t(key, label):
+        return tracker.task(f'{prefix}_{key}', label) if tracker else nullcontext()
+
+    conn = get_conn()
+
+    with _t('fetch', f'下载{company}变盘历史'):
+        records = _fetch_and_parse(rid, mid, cid)
+
+    with _t('save', f'保存{company}变盘历史 ({len(records)} 条)'):
+        if is_wh:
+            return upsert_wh_history(conn, int(mid), records, match_year)
+        else:
+            return upsert_coral_history(conn, int(mid), records, match_year)
     return 0
