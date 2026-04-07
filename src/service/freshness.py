@@ -30,13 +30,38 @@ def _match_status(schedule_id: int) -> int | None:
 
 # ── match_list ────────────────────────────────────────────────────────────────
 
-_LIST_STALE = timedelta(minutes=10)
+_LIST_THRESHOLDS: dict[int, timedelta] = {
+    1: timedelta(minutes=2),   # 上半场
+    3: timedelta(minutes=2),   # 下半场
+    0: timedelta(minutes=10),  # 未开赛
+}
 
 
-def should_fetch_match_list() -> bool:
-    """初始加载时用：DB 为空或超过 10 分钟未更新则返回 True。"""
-    row = get_conn().execute("SELECT MIN(fetched_at) FROM matches").fetchone()
-    return _is_stale(row[0] if row else None, _LIST_STALE)
+def should_fetch_match_list(filter_ids: list[int]) -> bool:
+    """filter_ids 中有任意一场数据缺失或过期则返回 True。
+
+    完场 (-1) 永不重抓；进行中 2 分钟过期；未开赛 10 分钟过期。
+    """
+    if not filter_ids:
+        return False
+
+    placeholders = ",".join("?" * len(filter_ids))
+    rows = get_conn().execute(
+        f"SELECT status, fetched_at FROM matches WHERE schedule_id IN ({placeholders})",
+        filter_ids,
+    ).fetchall()
+
+    if len(rows) < len(filter_ids):
+        return True  # 有 ID 不在库里
+
+    for status, fetched_at in rows:
+        if status == -1:
+            continue  # 完场：永不重抓
+        threshold = _LIST_THRESHOLDS.get(status, timedelta(minutes=10))
+        if _is_stale(fetched_at, threshold):
+            return True
+
+    return False
 
 
 # ── match_detail ──────────────────────────────────────────────────────────────

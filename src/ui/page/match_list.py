@@ -272,7 +272,7 @@ def render(on_match_click: callable = None):
     _reload()
 
     async def _auto_fetch():
-        if should_fetch_match_list():
+        if should_fetch_match_list(filter_ids[0]):
             await _on_fetch()
 
     ui.timer(0, _auto_fetch, once=True)
