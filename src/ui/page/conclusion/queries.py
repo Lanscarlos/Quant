@@ -170,16 +170,26 @@ def query_odds(mid: int) -> list[dict]:
     conn = get_conn()
     rows = conn.execute("""
         SELECT 'William Hill' AS company,
-               open_win, open_draw, open_lose, open_payout_rate,
-               cur_win, cur_draw, cur_lose, cur_payout_rate,
-               kelly_win, kelly_draw, kelly_lose
-        FROM odds_wh WHERE schedule_id = ?
+               w.open_win, w.open_draw, w.open_lose, w.open_payout_rate,
+               w.cur_win, w.cur_draw, w.cur_lose, w.cur_payout_rate,
+               w.kelly_win, w.kelly_draw, w.kelly_lose,
+               w.change_time,
+               oh.change_time AS open_time
+        FROM odds_wh w
+        LEFT JOIN odds_wh_history oh
+            ON oh.schedule_id = w.schedule_id AND oh.is_opening = 1
+        WHERE w.schedule_id = ?
         UNION ALL
         SELECT 'Ladbrokes' AS company,
-               open_win, open_draw, open_lose, open_payout_rate,
-               cur_win, cur_draw, cur_lose, cur_payout_rate,
-               kelly_win, kelly_draw, kelly_lose
-        FROM odds_coral WHERE schedule_id = ?
+               c.open_win, c.open_draw, c.open_lose, c.open_payout_rate,
+               c.cur_win, c.cur_draw, c.cur_lose, c.cur_payout_rate,
+               c.kelly_win, c.kelly_draw, c.kelly_lose,
+               c.change_time,
+               oh.change_time AS open_time
+        FROM odds_coral c
+        LEFT JOIN odds_coral_history oh
+            ON oh.schedule_id = c.schedule_id AND oh.is_opening = 1
+        WHERE c.schedule_id = ?
         ORDER BY company
     """, (mid, mid)).fetchall()
     return [{
@@ -189,17 +199,29 @@ def query_odds(mid: int) -> list[dict]:
         'cur_win':     fmt_float(r[5]),  'cur_draw':   fmt_float(r[6]),  'cur_lose':   fmt_float(r[7]),
         'cur_payout':  fmt_percent(r[8]),
         'kelly_win':   fmt_float(r[9]),  'kelly_draw': fmt_float(r[10]), 'kelly_lose': fmt_float(r[11]),
+        'cur_time':    r[12] or '-',
+        'open_time':   r[13] or '-',
     } for r in rows]
 
 
 # ── Asian handicap odds ────────────────────────────────────────────────────────
 
 def query_asian_odds(mid: int) -> dict | None:
-    r = get_conn().execute("""
-        SELECT open_handicap, open_home, open_away,
-               cur_handicap,  cur_home,  cur_away
-        FROM asian_odds_365
-        WHERE schedule_id = ?
+    conn = get_conn()
+    r = conn.execute("""
+        SELECT a.open_handicap, a.open_home, a.open_away,
+               a.cur_handicap,  a.cur_home,  a.cur_away,
+               oh.change_time AS open_time,
+               ch.change_time AS cur_time
+        FROM asian_odds_365 a
+        LEFT JOIN asian_odds_365_history oh
+            ON oh.schedule_id = a.schedule_id AND oh.is_opening = 1
+        LEFT JOIN (
+            SELECT schedule_id, change_time,
+                   ROW_NUMBER() OVER (PARTITION BY schedule_id ORDER BY change_time DESC) AS rn
+            FROM asian_odds_365_history WHERE is_opening = 0
+        ) ch ON ch.schedule_id = a.schedule_id AND ch.rn = 1
+        WHERE a.schedule_id = ?
     """, (mid,)).fetchone()
     if not r:
         return None
@@ -210,6 +232,8 @@ def query_asian_odds(mid: int) -> dict | None:
         'cur_handicap':  r[3] or '-',
         'cur_home':      fmt_float(r[4]),
         'cur_away':      fmt_float(r[5]),
+        'open_time':     r[6] or '-',
+        'cur_time':      r[7] or '-',
     }
 
 

@@ -61,9 +61,9 @@ def render_odds_section(odds_rows: list[dict], label: str, company_key: str, bor
         if row:
             table_rows = [
                 {'win': row['open_win'],  'draw': row['open_draw'],  'lose': row['open_lose'],
-                 'payout': row['open_payout'],  'time': '-'},
+                 'payout': row['open_payout'],  'time': row.get('open_time', '-')},
                 {'win': row['cur_win'],   'draw': row['cur_draw'],   'lose': row['cur_lose'],
-                 'payout': row['cur_payout'],   'time': '-'},
+                 'payout': row['cur_payout'],   'time': row.get('cur_time', '-')},
                 {'win': row['kelly_win'], 'draw': row['kelly_draw'], 'lose': row['kelly_lose'],
                  'payout': '-',                 'time': '-'},
             ]
@@ -78,9 +78,9 @@ def render_asian_section(asian_row: dict | None):
         if asian_row:
             table_rows = [
                 {'home': asian_row['open_home'], 'hc': asian_row['open_handicap'],
-                 'away': asian_row['open_away'], 'time': '-', 'data': '-'},
+                 'away': asian_row['open_away'], 'time': asian_row.get('open_time', '-'), 'data': '-'},
                 {'home': asian_row['cur_home'],  'hc': asian_row['cur_handicap'],
-                 'away': asian_row['cur_away'],  'time': '-', 'data': '-'},
+                 'away': asian_row['cur_away'],  'time': asian_row.get('cur_time', '-'),  'data': '-'},
             ]
             ui.table(columns=ASIAN_COLS, rows=table_rows).classes('w-full text-xs').props('dense flat')
         else:
