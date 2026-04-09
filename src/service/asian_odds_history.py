@@ -35,19 +35,17 @@ def _cell_dir(td) -> str:
 
 
 def _find_history_table(soup: BeautifulSoup):
+    """Find the odds-history table by locating a row where tds[2] is a float."""
     for table in soup.find_all("table"):
-        rows = table.find_all("tr")
-        data_rows = [r for r in rows if r.find_all("td")]
-        if not data_rows:
-            continue
-        tds = data_rows[0].find_all("td")
-        if len(tds) < 5:
-            continue
-        try:
-            float(tds[2].get_text(strip=True))
-            return table
-        except ValueError:
-            continue
+        for row in table.find_all("tr"):
+            tds = row.find_all("td")
+            if len(tds) < 7:
+                continue
+            try:
+                float(tds[2].get_text(strip=True))
+                return table
+            except ValueError:
+                continue
     return None
 
 
@@ -68,19 +66,19 @@ def _fetch_and_parse(mid: str | int) -> list[dict]:
     if not table:
         return []
 
+    # Columns: tds[0]=match_min tds[1]=score tds[2]=home_odds
+    #          tds[3]=handicap  tds[4]=away_odds tds[5]=change_time tds[6]=status
     result = []
-    for row in table.find_all("tr")[1:]:
+    for row in table.find_all("tr"):
         tds = row.find_all("td")
-        if len(tds) < 5:
-            continue
+        if len(tds) < 7:
+            continue  # skip header row and special colspan rows
+        try:
+            float(tds[2].get_text(strip=True))
+        except ValueError:
+            continue  # skip header row (text like '主队水位')
 
-        time_text = _cell_text(tds[0])
-        is_opening = time_text.endswith("(初盘)")
-        change_time = re.sub(r"\(初盘\)$", "", time_text).strip()
-
-        if not is_opening and len(tds) >= 6:
-            is_opening = _cell_text(tds[5]) == "开"
-
+        change_time = _cell_text(tds[5])
         if not change_time:
             continue
 
@@ -90,10 +88,14 @@ def _fetch_and_parse(mid: str | int) -> list[dict]:
             "home_odds":   _cell_text(tds[2]),
             "handicap":    _cell_text(tds[3]),
             "away_odds":   _cell_text(tds[4]),
-            "is_opening":  "1" if is_opening else "0",
+            "is_opening":  "0",
             "home_dir":    _cell_dir(tds[2]),
             "away_dir":    _cell_dir(tds[4]),
         })
+
+    # The last row (oldest timestamp) is the initial/opening odds
+    if result:
+        result[-1]["is_opening"] = "1"
 
     return result
 

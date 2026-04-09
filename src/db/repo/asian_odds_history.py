@@ -58,13 +58,19 @@ def upsert_365_history(
 
 
 def _complete_time(raw: str, year: int) -> str | None:
-    """Prepend year to "MM-DD HH:MM" timestamps from odds history pages.
+    """Normalize "M-D HH:MM" timestamps from odds history pages to ISO format.
 
-    Raw: "03-07 07:18"  →  "2026-03-07 07:18"
+    Raw: "3-19 07:18"  →  "2026-03-19 07:18"
+    Raw: "03-07 07:18" →  "2026-03-07 07:18"
     """
     if not raw:
         return None
-    return f"{year}-{raw}"
+    try:
+        date_part, time_part = raw.strip().split()
+        m, d = date_part.split("-")
+        return f"{year}-{int(m):02d}-{int(d):02d} {time_part}"
+    except (ValueError, AttributeError):
+        return f"{year}-{raw}"
 
 
 def _float(val) -> float | None:
