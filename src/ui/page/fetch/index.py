@@ -82,6 +82,7 @@ def render(on_complete=None):
                 .classes('flex-1')
                 .props('outlined dense clearable')
             )
+            force_checkbox = ui.checkbox('强制抓取').props('dense').tooltip('忽略新鲜度检查，强制重新拉取所有数据')
             fetch_btn = ui.button('抓取数据', icon='download').props('unelevated color=primary')
             stop_btn  = (
                 ui.button('中断', icon='stop')
@@ -199,6 +200,7 @@ def render(on_complete=None):
 
         ctx: dict = {}
         failed_keys: set = set()
+        background_tasks: list = []
 
         for phase in PHASES:
             if state['abort']:
@@ -218,7 +220,7 @@ def render(on_complete=None):
                     return
 
                 # 新鲜度检查
-                skip, msg = step.should_skip(int(mid_str))
+                skip, msg = step.should_skip(int(mid_str), force=force_checkbox.value)
                 if skip:
                     _update(step.KEY, 'skipped', msg)
                     return
@@ -243,14 +245,27 @@ def render(on_complete=None):
                     _update(step.KEY, 'error', str(exc)[:80])
                     failed_keys.add(step.KEY)
 
-            if len(phase) == 1:
-                await _run_step(phase[0])
-            else:
-                await asyncio.gather(*[_run_step(s) for s in phase])
+            bg_steps = [s for s in phase if getattr(s, 'BACKGROUND', False)]
+            fg_steps  = [s for s in phase if not getattr(s, 'BACKGROUND', False)]
+
+            # 后台步骤：create_task 后立即继续，不阻塞后续阶段
+            for step in bg_steps:
+                background_tasks.append(asyncio.create_task(_run_step(step)))
+
+            # 前台步骤：正常阻塞等待
+            if len(fg_steps) == 1:
+                await _run_step(fg_steps[0])
+            elif fg_steps:
+                await asyncio.gather(*[_run_step(s) for s in fg_steps])
+
+        # 所有前台阶段结束后，等待后台任务收尾
+        if background_tasks:
+            await asyncio.gather(*background_tasks)
 
         fetch_btn.enable()
         stop_btn.classes(add='hidden')
         state['running'] = False
+        force_checkbox.set_value(False)
 
         # 只要没有用户中断，即使部分步骤失败也跳转结论页
         if not state['abort'] and on_complete:

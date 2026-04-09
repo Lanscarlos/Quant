@@ -32,7 +32,9 @@ class StepMatchDetail:
     DEPENDS_ON: list[str] = []
 
     @staticmethod
-    def should_skip(mid: int) -> tuple[bool, str]:
+    def should_skip(mid: int, force: bool = False) -> tuple[bool, str]:
+        if force:
+            return False, ''
         if not should_fetch_detail(mid):
             return True, '数据仍然新鲜，已跳过'
         return False, ''
@@ -47,14 +49,17 @@ class StepMatchDetail:
 # ── 阶段 2: 欧赔数据 ────────────────────────────────────────────────────────────
 
 class StepSubOdds:
-    KEY   = 'sub_odds'
-    ICON  = 'query_stats'
-    LABEL = '子比赛赔率 (近六场 + 交手)'
-    PHASE = 2
+    KEY        = 'sub_odds'
+    ICON       = 'query_stats'
+    LABEL      = '子比赛赔率 (近六场 + 交手)'
+    PHASE      = 2
     DEPENDS_ON: list[str] = ['match_detail']
+    BACKGROUND = True   # 后台并发执行，不阻塞后续阶段
 
     @staticmethod
-    def should_skip(mid: int) -> tuple[bool, str]:
+    def should_skip(mid: int, force: bool = False) -> tuple[bool, str]:
+        if force:
+            return False, ''
         from src.db import get_conn
         conn = get_conn()
         total = conn.execute(
@@ -105,7 +110,9 @@ class StepEuroOdds:
     DEPENDS_ON: list[str] = []
 
     @staticmethod
-    def should_skip(mid: int) -> tuple[bool, str]:
+    def should_skip(mid: int, force: bool = False) -> tuple[bool, str]:
+        if force:
+            return False, ''
         if not should_fetch_odds(mid):
             return True, '数据仍然新鲜，已跳过'
         return False, ''
@@ -127,7 +134,9 @@ class StepAsianOdds:
     DEPENDS_ON: list[str] = []
 
     @staticmethod
-    def should_skip(mid: int) -> tuple[bool, str]:
+    def should_skip(mid: int, force: bool = False) -> tuple[bool, str]:
+        if force:
+            return False, ''
         if not should_fetch_asian_odds(mid):
             return True, '数据仍然新鲜，已跳过'
         return False, ''
@@ -148,7 +157,9 @@ class StepEuroHistory:
     DEPENDS_ON: list[str] = ['euro_odds']
 
     @staticmethod
-    def should_skip(mid: int) -> tuple[bool, str]:
+    def should_skip(mid: int, force: bool = False) -> tuple[bool, str]:
+        if force:
+            return False, ''
         if not should_fetch_history(mid):
             return True, '数据仍然新鲜，已跳过'
         return False, ''
@@ -184,7 +195,9 @@ class StepAsianHistory:
     DEPENDS_ON: list[str] = []
 
     @staticmethod
-    def should_skip(mid: int) -> tuple[bool, str]:
+    def should_skip(mid: int, force: bool = False) -> tuple[bool, str]:
+        if force:
+            return False, ''
         if not should_fetch_asian_history(mid):
             return True, '数据仍然新鲜，已跳过'
         return False, ''
