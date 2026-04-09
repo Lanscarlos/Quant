@@ -79,7 +79,16 @@ class StepSubOdds:
             """, (mid, mid)
         ).fetchone()[0]
         if covered >= total:
-            return True, '子比赛赔率已存在，已跳过'
+            # 还需确认近期赛事的 match_time 已全部填充（h30 赔率依赖）
+            missing_time = conn.execute(
+                """
+                SELECT COUNT(*) FROM match_recent
+                WHERE schedule_id = ?
+                  AND (match_time IS NULL OR match_time = '')
+                """, (mid,)
+            ).fetchone()[0]
+            if missing_time == 0:
+                return True, '子比赛赔率已存在，已跳过'
         return False, ''
 
     @staticmethod
