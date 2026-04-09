@@ -166,74 +166,99 @@ def query_header_extras(mid: int) -> dict:
 
 # ── European odds ──────────────────────────────────────────────────────────────
 
-def query_odds(mid: int) -> list[dict]:
+def query_odds(mid: int) -> dict:
+    """Return {company_name: {'open': row, 'history': [up to 5 rows before kick-off]}}."""
     conn = get_conn()
-    rows = conn.execute("""
-        SELECT 'William Hill' AS company,
-               w.open_win, w.open_draw, w.open_lose, w.open_payout_rate,
-               w.cur_win, w.cur_draw, w.cur_lose, w.cur_payout_rate,
-               w.kelly_win, w.kelly_draw, w.kelly_lose,
-               w.change_time,
-               oh.change_time AS open_time
-        FROM odds_wh w
-        LEFT JOIN odds_wh_history oh
-            ON oh.schedule_id = w.schedule_id AND oh.is_opening = 1
-        WHERE w.schedule_id = ?
-        UNION ALL
-        SELECT 'Ladbrokes' AS company,
-               c.open_win, c.open_draw, c.open_lose, c.open_payout_rate,
-               c.cur_win, c.cur_draw, c.cur_lose, c.cur_payout_rate,
-               c.kelly_win, c.kelly_draw, c.kelly_lose,
-               c.change_time,
-               oh.change_time AS open_time
-        FROM odds_coral c
-        LEFT JOIN odds_coral_history oh
-            ON oh.schedule_id = c.schedule_id AND oh.is_opening = 1
-        WHERE c.schedule_id = ?
-        ORDER BY company
-    """, (mid, mid)).fetchall()
-    return [{
-        'company':     r[0],
-        'open_win':    fmt_float(r[1]),  'open_draw':  fmt_float(r[2]),  'open_lose':  fmt_float(r[3]),
-        'open_payout': fmt_percent(r[4]),
-        'cur_win':     fmt_float(r[5]),  'cur_draw':   fmt_float(r[6]),  'cur_lose':   fmt_float(r[7]),
-        'cur_payout':  fmt_percent(r[8]),
-        'kelly_win':   fmt_float(r[9]),  'kelly_draw': fmt_float(r[10]), 'kelly_lose': fmt_float(r[11]),
-        'cur_time':    r[12] or '-',
-        'open_time':   r[13] or '-',
-    } for r in rows]
+    mt_row = conn.execute("SELECT match_time FROM matches WHERE schedule_id = ?", (mid,)).fetchone()
+    match_time = mt_row[0] if mt_row else None
+
+    result = {}
+    for company, snap_tbl, hist_tbl in [
+        ('William Hill', 'odds_wh',   'odds_wh_history'),
+        ('Ladbrokes',    'odds_coral', 'odds_coral_history'),
+    ]:
+        snap = conn.execute(f"""
+            SELECT s.open_win, s.open_draw, s.open_lose, s.open_payout_rate,
+                   oh.change_time
+            FROM {snap_tbl} s
+            LEFT JOIN {hist_tbl} oh ON oh.schedule_id = s.schedule_id AND oh.is_opening = 1
+            WHERE s.schedule_id = ?
+        """, (mid,)).fetchone()
+        if not snap:
+            continue
+
+        open_row = {
+            'win':    fmt_float(snap[0]),
+            'draw':   fmt_float(snap[1]),
+            'lose':   fmt_float(snap[2]),
+            'payout': fmt_percent(snap[3]),
+            'time':   snap[4] or '-',
+        }
+
+        hist_rows = conn.execute(f"""
+            SELECT win, draw, lose, payout_rate, change_time
+            FROM {hist_tbl}
+            WHERE schedule_id = ? AND is_opening = 0
+              AND (? IS NULL OR change_time < ?)
+            ORDER BY change_time DESC
+            LIMIT 5
+        """, (mid, match_time, match_time)).fetchall()
+
+        result[company] = {
+            'open': open_row,
+            'history': [{
+                'win':    fmt_float(r[0]),
+                'draw':   fmt_float(r[1]),
+                'lose':   fmt_float(r[2]),
+                'payout': fmt_percent(r[3]),
+                'time':   r[4] or '-',
+            } for r in hist_rows],
+        }
+
+    return result
 
 
 # ── Asian handicap odds ────────────────────────────────────────────────────────
 
 def query_asian_odds(mid: int) -> dict | None:
+    """Return {'open': row, 'history': [up to 3 rows before kick-off]}, or None."""
     conn = get_conn()
-    r = conn.execute("""
+    mt_row = conn.execute("SELECT match_time FROM matches WHERE schedule_id = ?", (mid,)).fetchone()
+    match_time = mt_row[0] if mt_row else None
+
+    snap = conn.execute("""
         SELECT a.open_handicap, a.open_home, a.open_away,
-               a.cur_handicap,  a.cur_home,  a.cur_away,
-               oh.change_time AS open_time,
-               ch.change_time AS cur_time
+               oh.change_time
         FROM asian_odds_365 a
         LEFT JOIN asian_odds_365_history oh
             ON oh.schedule_id = a.schedule_id AND oh.is_opening = 1
-        LEFT JOIN (
-            SELECT schedule_id, change_time,
-                   ROW_NUMBER() OVER (PARTITION BY schedule_id ORDER BY change_time DESC) AS rn
-            FROM asian_odds_365_history WHERE is_opening = 0
-        ) ch ON ch.schedule_id = a.schedule_id AND ch.rn = 1
         WHERE a.schedule_id = ?
     """, (mid,)).fetchone()
-    if not r:
+    if not snap:
         return None
+
+    hist_rows = conn.execute("""
+        SELECT home_odds, handicap, away_odds, change_time
+        FROM asian_odds_365_history
+        WHERE schedule_id = ? AND is_opening = 0
+          AND (? IS NULL OR change_time < ?)
+        ORDER BY change_time DESC
+        LIMIT 3
+    """, (mid, match_time, match_time)).fetchall()
+
     return {
-        'open_handicap': r[0] or '-',
-        'open_home':     fmt_float(r[1]),
-        'open_away':     fmt_float(r[2]),
-        'cur_handicap':  r[3] or '-',
-        'cur_home':      fmt_float(r[4]),
-        'cur_away':      fmt_float(r[5]),
-        'open_time':     r[6] or '-',
-        'cur_time':      r[7] or '-',
+        'open': {
+            'hc':   snap[0] or '-',
+            'home': fmt_float(snap[1]),
+            'away': fmt_float(snap[2]),
+            'time': snap[3] or '-',
+        },
+        'history': [{
+            'hc':   r[1] or '-',
+            'home': fmt_float(r[0]),
+            'away': fmt_float(r[2]),
+            'time': r[3] or '-',
+        } for r in hist_rows],
     }
 
 

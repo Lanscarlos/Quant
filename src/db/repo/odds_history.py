@@ -91,7 +91,7 @@ def _complete_time(raw: str, year: int) -> str | None:
 
 def _float(val) -> float | None:
     try:
-        v = str(val).strip()
+        v = str(val).strip().rstrip('%')
         return float(v) if v else None
     except (TypeError, ValueError):
         return None

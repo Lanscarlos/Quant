@@ -53,21 +53,24 @@ def render_h2h_section(h2h: dict, fetched: bool = False, border_right: bool = Tr
             no_data_hint()
 
 
-def render_odds_section(odds_rows: list[dict], label: str, company_key: str, border_right: bool = True):
+_ODDS_EMPTY  = {'tag': '', 'win': '-', 'draw': '-', 'lose': '-', 'payout': '-', 'time': '-'}
+_ASIAN_EMPTY = {'tag': '', 'home': '-', 'hc': '-', 'away': '-', 'time': '-', 'data': '-'}
+
+_TAG_SLOT = '<q-td :props="props"><q-badge v-if="props.value" color="amber-8" :label="props.value" /></q-td>'
+
+
+def render_odds_section(odds: dict, label: str, company_key: str, border_right: bool = True):
     border_cls = 'border-r border-slate-200' if border_right else ''
     with ui.column().classes(f'flex-1 {border_cls} p-2 gap-1 min-w-0'):
         ui.label(label).classes('text-xs font-semibold text-slate-600')
-        row = next((r for r in odds_rows if r['company'] == company_key), None)
-        if row:
-            table_rows = [
-                {'win': row['open_win'],  'draw': row['open_draw'],  'lose': row['open_lose'],
-                 'payout': row['open_payout'],  'time': row.get('open_time', '-')},
-                {'win': row['cur_win'],   'draw': row['cur_draw'],   'lose': row['cur_lose'],
-                 'payout': row['cur_payout'],   'time': row.get('cur_time', '-')},
-                {'win': row['kelly_win'], 'draw': row['kelly_draw'], 'lose': row['kelly_lose'],
-                 'payout': '-',                 'time': '-'},
-            ]
-            ui.table(columns=ODDS_COLS, rows=table_rows).classes('w-full text-xs').props('dense flat')
+        company_data = odds.get(company_key) if odds else None
+        if company_data:
+            history = company_data['history']
+            padded  = (history + [_ODDS_EMPTY] * 5)[:5]
+            open_r  = {**company_data['open'], 'tag': '初始'}
+            hist_rs = [{**r, 'tag': ''} for r in padded]
+            t = ui.table(columns=ODDS_COLS, rows=[open_r] + hist_rs).classes('w-full text-xs').props('dense flat')
+            t.add_slot('body-cell-tag', _TAG_SLOT)
         else:
             no_data_hint()
 
@@ -76,12 +79,11 @@ def render_asian_section(asian_row: dict | None):
     with ui.column().classes('flex-1 p-2 gap-1 min-w-0'):
         ui.label('365亚盘').classes('text-xs font-semibold text-slate-600')
         if asian_row:
-            table_rows = [
-                {'home': asian_row['open_home'], 'hc': asian_row['open_handicap'],
-                 'away': asian_row['open_away'], 'time': asian_row.get('open_time', '-'), 'data': '-'},
-                {'home': asian_row['cur_home'],  'hc': asian_row['cur_handicap'],
-                 'away': asian_row['cur_away'],  'time': asian_row.get('cur_time', '-'),  'data': '-'},
-            ]
-            ui.table(columns=ASIAN_COLS, rows=table_rows).classes('w-full text-xs').props('dense flat')
+            history = asian_row['history']
+            padded  = (history + [_ASIAN_EMPTY] * 3)[:3]
+            open_r  = {**asian_row['open'], 'tag': '初始', 'data': '-'}
+            rows    = [open_r] + [{**r, 'tag': '', 'data': '-'} for r in padded]
+            t = ui.table(columns=ASIAN_COLS, rows=rows).classes('w-full text-xs').props('dense flat')
+            t.add_slot('body-cell-tag', _TAG_SLOT)
         else:
             no_data_hint()
