@@ -5,6 +5,7 @@ NAV_ITEMS = [
     ('match_list',  'sports_soccer',  '赛事列表'),
     ('fetch',       'download',       '抓取数据'),
     ('conclusion',  'emoji_events',   '结论'),
+    ('history',     'bookmark',       '历史数据'),
 ]
 
 BOTTOM_ITEMS = [
