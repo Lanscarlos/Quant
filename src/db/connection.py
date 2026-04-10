@@ -4,10 +4,20 @@ SQLite connection manager.
 Provides a singleton connection to data/quant.db.
 Call init_db() once at app startup to create all tables.
 """
+import sys
 import sqlite3
 from pathlib import Path
 
-_DB_PATH = Path(__file__).parent.parent.parent / "data" / "quant.db"
+
+def _get_db_path() -> Path:
+    if getattr(sys, 'frozen', False):
+        base = Path(sys.executable).parent
+    else:
+        base = Path(__file__).parent.parent.parent
+    return base / "data" / "quant.db"
+
+
+_DB_PATH = _get_db_path()
 
 _conn: sqlite3.Connection | None = None
 
