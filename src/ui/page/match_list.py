@@ -58,7 +58,7 @@ def _query_filtered(ids: list) -> list[dict]:
             LEFT JOIN leagues l  ON m.league_abbr  = l.league_abbr
             LEFT JOIN odds_wh o ON o.schedule_id = m.schedule_id
             WHERE CAST(m.schedule_id AS TEXT) IN ({placeholders})
-            ORDER BY m.match_time DESC
+            ORDER BY m.match_time ASC
         """, (*ids,)).fetchall()
     else:
         rows = []
