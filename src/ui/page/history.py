@@ -3,10 +3,12 @@
 
 Displays user-saved match analysis records.
 External API:
-  render() — registered with the Router
+  render(on_match_click) — registered with the Router
 """
 
-from nicegui import ui
+from nicegui import ui, run
+
+from src.db.repo.history import list_saved_matches
 
 _TABLE_COLS = [
     {'name': 'idx',      'label': '序号',          'field': 'idx',       'align': 'center', 'style': 'width:48px'},
@@ -71,7 +73,7 @@ def _render_odds_panel(system_name: str):
                     .on('click', lambda: ui.notify('保存数据功能待实现', type='info'))
 
 
-def render():
+def render(on_match_click: callable = None):
     cached_rows: list = [[]]
 
     with ui.column().classes('w-full h-full gap-0'):
@@ -132,6 +134,9 @@ def render():
                             </q-td>
                         ''')
 
+                        if on_match_click:
+                            tbl.on('rowClick', lambda e: on_match_click(e.args[1]['id']))
+
                     data_table()
 
                 # 底部两个平赔面板
@@ -140,6 +145,17 @@ def render():
                         _render_odds_panel(name)
 
     # ── 事件绑定 ──────────────────────────────────────────────────────
+
+    def _reload():
+        cached_rows[0] = list_saved_matches()
+        data_table.refresh()
+
+    def _on_refresh():
+        refresh_btn.props(add='loading disable')
+        try:
+            _reload()
+        finally:
+            refresh_btn.props(remove='loading disable')
 
     recent10_btn.on_click(lambda: ui.notify('近十场分析数据功能待实现', type='info'))
     time_btn.on_click(lambda: ui.notify('按时间检索功能待实现', type='info'))
@@ -151,4 +167,7 @@ def render():
     save_btn.on_click(lambda: ui.notify('保存功能待实现', type='info'))
     home_btn.on_click(lambda: ui.notify('已在主界面', type='info'))
     exit_btn.on_click(lambda: ui.notify('退出功能待实现', type='info'))
-    refresh_btn.on_click(lambda: ui.notify('刷新功能待实现', type='info'))
+    refresh_btn.on_click(_on_refresh)
+
+    # 初始加载
+    _reload()

@@ -7,31 +7,39 @@ External API:
 from nicegui import ui
 
 from .formatters import fmt_display
-from .queries import query_asian_odds, query_header_extras, query_h2h, query_match, query_odds, query_recent_matches
+from .queries import load_all_from_quant
 from .renderers import render_asian_section, render_h2h_section, render_odds_section, render_recent_section, wdl_badges
 
 
-def _render_body(mid: int) -> None:
-    """渲染结论主体内容."""
-    match = query_match(mid)
+def _render_body(data: dict) -> None:
+    """渲染结论主体内容。data 是 load_all_from_quant / load_snapshot 返回的统一数据包。"""
+    match = data['match']
     if not match:
         ui.label('未找到赛事数据').classes('text-sm text-slate-400')
         return
 
-    extras      = query_header_extras(mid)
-    recent      = query_recent_matches(mid)
-    h2h         = query_h2h(mid)
-    odds        = query_odds(mid)
-    asian_odds  = query_asian_odds(mid)
+    extras      = data['extras']
+    recent      = data['recent']
+    h2h         = data['h2h']
+    odds        = data['odds']
+    asian_odds  = data['asian_odds']
 
     with ui.column().classes('w-full gap-0'):
 
         # ── 操作按钮栏 ────────────────────────────────────────────────
+        def _on_save():
+            from src.db.repo.history import save_match
+            try:
+                save_match(match['schedule_id'])
+                ui.notify('保存成功', type='positive')
+            except Exception as exc:
+                ui.notify(f'保存失败：{exc}', type='negative')
+
         with ui.row().classes('w-full items-center gap-1 pb-2 flex-wrap'):
             ui.button('点击获取数据1', on_click=lambda: ui.notify('点击获取数据1')).props('outline size=sm')
             ui.button('点击获取数据2', on_click=lambda: ui.notify('点击获取数据2')).props('outline size=sm')
             ui.button('数据分析初始', on_click=lambda: ui.notify('数据分析初始')).props('outline size=sm')
-            ui.button('结果保存',     on_click=lambda: ui.notify('结果保存')).props('outline size=sm')
+            ui.button('结果保存',     on_click=_on_save).props('outline size=sm')
             ui.button('历史数据加载', on_click=lambda: ui.notify('历史数据加载')).props('outline size=sm')
             ui.button('历史数据页面', on_click=lambda: ui.notify('历史数据页面')).props('outline size=sm')
             ui.button('反向为图片',   on_click=lambda: ui.notify('反向为图片')).props('outline size=sm')
@@ -116,7 +124,7 @@ def _render_body(mid: int) -> None:
 
 
 def render():
-    state = {'mid': None}
+    state = {'mid': None, 'source': 'live'}
 
     # ── 布局 ──────────────────────────────────────────────────────────────────
     with ui.scroll_area().classes('w-full h-full'):
@@ -131,15 +139,27 @@ def render():
                         ui.label('暂无数据').classes('text-base font-medium')
                         ui.label('请在「赛事列表」中点击赛事，或在「抓取数据」页输入赛事 URL 后抓取').classes('text-sm')
                     return
-                _render_body(mid)
+
+                if state['source'] == 'history':
+                    from src.db.repo.history import load_snapshot
+                    data = load_snapshot(mid)
+                else:
+                    data = load_all_from_quant(mid)
+
+                if not data or not data.get('match'):
+                    ui.label('未找到赛事数据').classes('text-sm text-slate-400')
+                    return
+
+                _render_body(data)
 
             conclusion_body()
 
     # ── 外部 API ──────────────────────────────────────────────────────────────
 
-    def trigger(mid: int | str) -> None:
-        """由抓取页完成后调用：设置 mid 并刷新结论."""
+    def trigger(mid: int | str, source: str = 'live') -> None:
+        """设置 mid 并刷新结论。source='live' 从 quant.db 读，'history' 从 history.db 读。"""
         state['mid'] = int(mid)
+        state['source'] = source
         conclusion_body.refresh()
 
     return trigger

@@ -33,10 +33,15 @@ def render():
         if _conclusion_trigger[0]:
             _conclusion_trigger[0](mid)
 
+    def _on_history_match_click(mid):
+        router.navigate('conclusion')
+        if _conclusion_trigger[0]:
+            _conclusion_trigger[0](mid, source='history')
+
     router.add('match_list',   lambda: match_list.render(on_match_click=_on_match_click))
     router.add('fetch',        lambda: fetch_index.render(on_complete=_on_fetch_complete))
     router.add('conclusion',   conclusion_index.render)
-    router.add('history',      history.render)
+    router.add('history',      lambda: history.render(on_match_click=_on_history_match_click))
     router.add('settings',     lambda: ui.label('⚙️ 设置页').classes('text-2xl'))
 
     with ui.row().classes('w-full h-screen gap-0'):

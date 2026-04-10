@@ -277,6 +277,18 @@ def query_all_sections(mid: int) -> dict:
     }
 
 
+def load_all_from_quant(mid: int) -> dict:
+    """Load all conclusion data from quant.db into a unified data pack."""
+    return {
+        'match':      query_match(mid),
+        'extras':     query_header_extras(mid),
+        'recent':     query_recent_matches(mid),
+        'h2h':        query_h2h(mid),
+        'odds':       query_odds(mid),
+        'asian_odds': query_asian_odds(mid),
+    }
+
+
 # ── Fetch recent match odds (background helper) ────────────────────────────────
 
 def fetch_recent_odds(mid: int) -> None:
