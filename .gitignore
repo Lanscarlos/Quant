@@ -8,3 +8,6 @@
 /data/quant.db-shm
 /data/quant.db-wal
 /.claude
+/data/history.db
+/data/history.db-shm
+/data/history.db-wal
