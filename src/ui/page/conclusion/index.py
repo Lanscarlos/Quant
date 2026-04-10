@@ -41,10 +41,13 @@ def _render_body(mid: int) -> None:
         ui.separator().classes('mb-2')
 
         # ── 赛事头部 ──────────────────────────────────────────────────
-        with ui.row().classes('w-full items-center py-2'):
+        with ui.row().classes('w-full items-center py-2 gap-2'):
 
-            # 主队
-            with ui.column().classes('flex-1 gap-0'):
+            # 联赛名称（最左侧）
+            ui.label(match['league']).classes('text-xs text-slate-500 self-center w-20 shrink-0')
+
+            # 主队（靠中间右对齐）
+            with ui.column().classes('flex-1 items-end gap-0'):
                 ui.label(match['home_team']).classes('text-lg font-bold text-blue-700')
                 with ui.row().classes('items-center gap-3'):
                     with ui.row().classes('items-center gap-1'):
@@ -56,7 +59,7 @@ def _render_body(mid: int) -> None:
                     if extras.get('home_wdl'):
                         wdl_badges(*extras['home_wdl'])
 
-            # 比分 / 时间 / 联赛
+            # 比分 / 时间
             with ui.column().classes('px-4 items-center gap-0 flex-shrink-0'):
                 hs, as_ = match['home_score'], match['away_score']
                 if hs is not None:
@@ -67,11 +70,10 @@ def _render_body(mid: int) -> None:
                 else:
                     ui.label('VS').classes('text-2xl font-bold text-slate-300')
                 ui.label(match['match_time'] or '').classes('text-xs text-slate-400 mt-1')
-                ui.label(match['league']).classes('text-xs text-slate-500')
 
-            # 客队
-            with ui.column().classes('flex-1 items-end gap-0'):
-                ui.label(match['away_team']).classes('text-lg font-bold text-red-600 text-right')
+            # 客队（靠中间左对齐）
+            with ui.column().classes('flex-1 items-start gap-0'):
+                ui.label(match['away_team']).classes('text-lg font-bold text-red-600')
                 with ui.row().classes('items-center gap-3'):
                     if extras.get('away_wdl'):
                         wdl_badges(*extras['away_wdl'])
@@ -81,6 +83,9 @@ def _render_body(mid: int) -> None:
                     with ui.row().classes('items-center gap-1'):
                         ui.label('排名').classes('text-xs text-slate-400')
                         ui.label(fmt_display(match['away_rank'])).classes('text-xs font-bold text-slate-600')
+
+            # 右侧占位，平衡左边联赛标签宽度，保持整体居中
+            ui.element('div').classes('w-20 shrink-0')
 
         ui.separator().classes('my-2')
 
