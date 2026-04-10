@@ -196,7 +196,7 @@ def query_odds(mid: int) -> dict:
         }
 
         hist_rows = conn.execute(f"""
-            SELECT win, draw, lose, payout_rate, change_time
+            SELECT win, draw, lose, payout_rate, change_time, win_dir, draw_dir, lose_dir
             FROM {hist_tbl}
             WHERE schedule_id = ? AND is_opening = 0
               AND (? IS NULL OR change_time < ?)
@@ -207,12 +207,15 @@ def query_odds(mid: int) -> dict:
         result[company] = {
             'open': open_row,
             'history': [{
-                'win':    fmt_float(r[0]),
-                'draw':   fmt_float(r[1]),
-                'lose':   fmt_float(r[2]),
-                'payout': fmt_percent(r[3]),
-                'time':   r[4] or '-',
-            } for r in hist_rows],
+                'win':      fmt_float(r[0]),
+                'draw':     fmt_float(r[1]),
+                'lose':     fmt_float(r[2]),
+                'payout':   fmt_percent(r[3]),
+                'time':     r[4] or '-',
+                'win_dir':  r[5] or '',
+                'draw_dir': r[6] or '',
+                'lose_dir': r[7] or '',
+            } for r in reversed(hist_rows)],
         }
 
     return result
@@ -238,7 +241,7 @@ def query_asian_odds(mid: int) -> dict | None:
         return None
 
     hist_rows = conn.execute("""
-        SELECT home_odds, handicap, away_odds, change_time
+        SELECT home_odds, handicap, away_odds, change_time, home_dir, away_dir
         FROM asian_odds_365_history
         WHERE schedule_id = ? AND is_opening = 0
           AND (? IS NULL OR change_time < ?)
@@ -254,11 +257,13 @@ def query_asian_odds(mid: int) -> dict | None:
             'time': snap[3] or '-',
         },
         'history': [{
-            'hc':   r[1] or '-',
-            'home': fmt_float(r[0]),
-            'away': fmt_float(r[2]),
-            'time': r[3] or '-',
-        } for r in hist_rows],
+            'hc':       r[1] or '-',
+            'home':     fmt_float(r[0]),
+            'away':     fmt_float(r[2]),
+            'time':     r[3] or '-',
+            'home_dir': r[4] or '',
+            'away_dir': r[5] or '',
+        } for r in reversed(hist_rows)],
     }
 
 
