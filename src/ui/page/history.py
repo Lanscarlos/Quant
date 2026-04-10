@@ -82,7 +82,7 @@ def render(on_match_click: callable = None):
         with ui.row().classes(
             'w-full items-center gap-2 px-4 py-2 bg-white border-b border-slate-200'
         ):
-            ui.icon('bookmark').classes('text-xl text-blue-600')
+            ui.icon('history').classes('text-xl text-blue-600')
             ui.label('历史数据').classes('text-base font-bold text-slate-700 flex-1')
             err_label = ui.label('').classes('text-xs text-red-500')
 
