@@ -180,7 +180,7 @@ def render(on_match_click: callable = None):
         try:
             filter_ids[0], _ = await asyncio.gather(
                 run.io_bound(get_filtered_match_ids),
-                asyncio.sleep(random.uniform(0.5, 2.0)),
+                asyncio.sleep(random.uniform(0.1, 0.6)),
             )
             is_loading[0] = False
             _reload()

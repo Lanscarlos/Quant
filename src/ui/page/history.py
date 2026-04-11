@@ -6,6 +6,9 @@ External API:
   render(on_match_click) — registered with the Router
 """
 
+import asyncio
+import random
+
 from nicegui import ui, run
 
 from src.db.repo.history import list_saved_matches, list_distinct_leagues, list_distinct_teams
@@ -91,6 +94,7 @@ def _render_odds_panel(system_name: str):
 def render(on_match_click: callable = None):
     cached_rows: list = [[]]
     active_filters: list = [{}]
+    is_loading: list = [False]
 
     # ── 筛选对话框内部状态 ─────────────────────────────────────────────
     league_avail:      list = [[]]
@@ -188,6 +192,14 @@ def render(on_match_click: callable = None):
                 ):
                     @ui.refreshable
                     def data_table():
+                        if is_loading[0]:
+                            with ui.row().classes(
+                                'w-full items-center justify-center gap-3 py-16'
+                            ):
+                                ui.spinner('dots', size='lg', color='blue-6')
+                                ui.label('正在加载...').classes('text-sm text-slate-400')
+                            return
+
                         rows = cached_rows[0]
                         if not rows:
                             with ui.row().classes(
@@ -450,10 +462,22 @@ def render(on_match_click: callable = None):
         _team_opts.refresh()
         team_dialog.open()
 
-    def _on_refresh():
+    async def _on_refresh():
         refresh_btn.props(add='loading disable')
+        is_loading[0] = True
+        data_table.refresh()
         try:
-            _reload()
+            filters = active_filters[0] if active_filters[0] else None
+            cached_rows[0], _ = await asyncio.gather(
+                run.io_bound(list_saved_matches, filters),
+                asyncio.sleep(random.uniform(0.1, 0.6)),
+            )
+            is_loading[0] = False
+            data_table.refresh()
+            filter_chips.refresh()
+        except Exception:
+            is_loading[0] = False
+            data_table.refresh()
         finally:
             refresh_btn.props(remove='loading disable')
 
