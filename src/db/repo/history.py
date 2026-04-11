@@ -158,10 +158,93 @@ def load_snapshot(schedule_id: int) -> dict | None:
     }
 
 
-def list_saved_matches() -> list[dict]:
-    """Query all saved matches for the history list page."""
+_ODDS_COLS = frozenset({
+    'wh_open_win', 'wh_open_draw', 'wh_open_lose',
+    'wh_cur_win', 'wh_cur_draw', 'wh_cur_lose',
+    'coral_open_win', 'coral_open_draw', 'coral_open_lose',
+    'coral_cur_win', 'coral_cur_draw', 'coral_cur_lose',
+})
+
+
+def list_distinct_leagues() -> list[str]:
+    """Return sorted list of distinct league names in saved_matches."""
+    hconn = get_history_conn()
+    rows = hconn.execute(
+        "SELECT DISTINCT league FROM saved_matches WHERE league IS NOT NULL ORDER BY league"
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def list_distinct_teams() -> list[str]:
+    """Return sorted list of distinct team names (home + away combined) in saved_matches."""
     hconn = get_history_conn()
     rows = hconn.execute("""
+        SELECT DISTINCT team FROM (
+            SELECT home_team AS team FROM saved_matches WHERE home_team IS NOT NULL
+            UNION
+            SELECT away_team FROM saved_matches WHERE away_team IS NOT NULL
+        ) ORDER BY team
+    """).fetchall()
+    return [r[0] for r in rows]
+
+
+def list_saved_matches(filters: dict | None = None) -> list[dict]:
+    """Query saved matches for the history list page, with optional filtering.
+
+    Supported filter keys:
+      time_from  — match_time >= value
+      time_to    — match_time <= value + ' 23:59:59'
+      league     — list[str], exact IN match
+      team       — list[str], exact IN match on home/away (controlled by team_role)
+      team_role  — 'home' | 'away' | 'both' (default 'both')
+      odds_type  — column name (must be in _ODDS_COLS whitelist)
+      odds_min   — odds_type column >= value
+      odds_max   — odds_type column <= value
+      limit      — LIMIT n
+    """
+    hconn = get_history_conn()
+
+    conditions: list[str] = []
+    params: list = []
+
+    if filters:
+        if 'time_from' in filters:
+            conditions.append("match_time >= ?")
+            params.append(filters['time_from'])
+        if 'time_to' in filters:
+            conditions.append("match_time <= ?")
+            params.append(filters['time_to'] + ' 23:59:59')
+        if 'league' in filters:
+            vals = filters['league']
+            ph = ','.join('?' * len(vals))
+            conditions.append(f"league IN ({ph})")
+            params.extend(vals)
+        if 'team' in filters:
+            vals = filters['team']
+            ph = ','.join('?' * len(vals))
+            role = filters.get('team_role', 'both')
+            if role == 'home':
+                conditions.append(f"home_team IN ({ph})")
+                params.extend(vals)
+            elif role == 'away':
+                conditions.append(f"away_team IN ({ph})")
+                params.extend(vals)
+            else:
+                conditions.append(f"(home_team IN ({ph}) OR away_team IN ({ph}))")
+                params.extend(vals + vals)
+        col = filters.get('odds_type')
+        if col and col in _ODDS_COLS:
+            if 'odds_min' in filters:
+                conditions.append(f"{col} >= ?")
+                params.append(filters['odds_min'])
+            if 'odds_max' in filters:
+                conditions.append(f"{col} <= ?")
+                params.append(filters['odds_max'])
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    limit = f"LIMIT {int(filters['limit'])}" if filters and 'limit' in filters else ""
+
+    rows = hconn.execute(f"""
         SELECT id, schedule_id, saved_at, match_time,
                home_team, away_team, league,
                wh_open_win, wh_open_draw, wh_open_lose,
@@ -169,8 +252,10 @@ def list_saved_matches() -> list[dict]:
                asian_cur_handicap, asian_cur_home, asian_cur_away,
                home_score, away_score, analysis_note
         FROM saved_matches
+        {where}
         ORDER BY saved_at DESC
-    """).fetchall()
+        {limit}
+    """, params).fetchall()
 
     result = []
     for i, r in enumerate(rows, 1):
