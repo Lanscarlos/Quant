@@ -11,7 +11,7 @@ import random
 
 from nicegui import ui, run
 
-from src.db.repo.history import list_saved_matches, list_distinct_leagues, list_distinct_teams
+from src.db.repo.history import list_saved_matches, list_distinct_leagues, list_distinct_teams, backfill_h30
 
 _TABLE_COLS = [
     {'name': 'idx',      'label': '序号',          'field': 'idx',       'align': 'center', 'style': 'width:48px'},
@@ -492,5 +492,6 @@ def render(on_match_click: callable = None):
     save_btn.on_click(lambda: ui.notify('保存功能待实现', type='info'))
     refresh_btn.on_click(_on_refresh)
 
-    # 初始加载
+    # 初始加载（顺带补全旧记录的 h30 数据）
+    backfill_h30()
     _reload()
