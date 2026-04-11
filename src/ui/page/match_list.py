@@ -47,6 +47,18 @@ def _query_filtered(ids: list) -> list[dict]:
                 COALESCE(at.team_name_cn, '') AS away_team,
                 COALESCE(l.league_name_cn, m.league_abbr, '') AS league,
                 o.open_win,  o.open_draw,  o.open_lose,
+                (SELECT win  FROM odds_wh_history
+                 WHERE schedule_id = m.schedule_id AND is_opening = 0
+                   AND change_time <= datetime(m.match_time, '-30 minutes')
+                 ORDER BY change_time DESC LIMIT 1) AS h30_win,
+                (SELECT draw FROM odds_wh_history
+                 WHERE schedule_id = m.schedule_id AND is_opening = 0
+                   AND change_time <= datetime(m.match_time, '-30 minutes')
+                 ORDER BY change_time DESC LIMIT 1) AS h30_draw,
+                (SELECT lose FROM odds_wh_history
+                 WHERE schedule_id = m.schedule_id AND is_opening = 0
+                   AND change_time <= datetime(m.match_time, '-30 minutes')
+                 ORDER BY change_time DESC LIMIT 1) AS h30_lose,
                 o.cur_win,   o.cur_draw,   o.cur_lose,
                 m.home_score, m.away_score
             FROM matches m
@@ -62,8 +74,9 @@ def _query_filtered(ids: list) -> list[dict]:
 
     result = []
     for i, r in enumerate(rows, 1):
-        hs, as_ = r[11], r[12]
+        hs, as_ = r[14], r[15]
         score = f"{hs}:{as_}" if hs is not None and as_ is not None else '-'
+        h30_str = f"{_f(r[8])} / {_f(r[9])} / {_f(r[10])}" if r[8] is not None else '-'
         result.append({
             'idx':       i,
             'id':        r[0],
@@ -72,8 +85,8 @@ def _query_filtered(ids: list) -> list[dict]:
             'away_team': r[3],
             'league':    r[4],
             'open_odds': f"{_f(r[5])} / {_f(r[6])} / {_f(r[7])}",
-            'h30_odds':  '-',
-            'cur_odds':  f"{_f(r[8])} / {_f(r[9])} / {_f(r[10])}",
+            'h30_odds':  h30_str,
+            'cur_odds':  f"{_f(r[11])} / {_f(r[12])} / {_f(r[13])}",
             'asian':     '-',
             'analysis':  '',
             'score':     score,
