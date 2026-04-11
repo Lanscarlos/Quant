@@ -310,6 +310,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     """Apply incremental schema migrations for existing databases."""
     _add_column_if_missing(conn, "match_recent", "match_time", "TEXT")
     _add_column_if_missing(conn, "odds_wh", "no_data", "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "match_recent", "home_rank", "INTEGER")
+    _add_column_if_missing(conn, "match_recent", "away_rank", "INTEGER")
+    _add_column_if_missing(conn, "match_h2h", "home_rank", "INTEGER")
+    _add_column_if_missing(conn, "match_h2h", "away_rank", "INTEGER")
 
 
 def _add_column_if_missing(

@@ -38,6 +38,8 @@ def upsert_recent_matches(conn: sqlite3.Connection, record: dict) -> int:
                 entry.get("handicap"),
                 _int(entry.get("result")),
                 _int(entry.get("hc_result")),
+                _int(entry.get("home_rank")),
+                _int(entry.get("away_rank")),
             ))
 
     if not rows:
@@ -53,8 +55,9 @@ def upsert_recent_matches(conn: sqlite3.Connection, record: dict) -> int:
                 away_id, away_name,
                 home_ft, away_ft,
                 ht_score, handicap,
-                result, hc_result
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                result, hc_result,
+                home_rank, away_rank
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )

@@ -59,7 +59,8 @@ def query_h2h(mid: int) -> dict:
     rows = conn.execute("""
         SELECT h.home_name, h.away_name, h.home_id,
                h.home_ft, h.away_ft,
-               wo.cur_win, wo.cur_draw, wo.cur_lose
+               wo.cur_win, wo.cur_draw, wo.cur_lose,
+               h.home_rank, h.away_rank
         FROM match_h2h h
         LEFT JOIN odds_wh wo ON wo.schedule_id = h.match_id
         WHERE h.schedule_id = ?
@@ -69,8 +70,9 @@ def query_h2h(mid: int) -> dict:
 
     result_rows, win, draw, loss = [], 0, 0, 0
     for r in rows:
-        home_name, away_name, home_id = r[0], r[1], r[2]
+        home_name, away_name, home_id = r[0] or '', r[1] or '', r[2]
         home_ft, away_ft = r[3], r[4]
+        home_rank, away_rank = r[8], r[9]
         side = '主' if home_id == h_id else '客'
         if home_ft is not None and away_ft is not None:
             focus_win  = (home_ft > away_ft) if home_id == h_id else (away_ft > home_ft)
@@ -81,8 +83,8 @@ def query_h2h(mid: int) -> dict:
         score = f"{home_ft}:{away_ft}" if home_ft is not None else '-'
         result_rows.append({
             'side':      side,
-            'home_name': home_name or '',
-            'away_name': away_name or '',
+            'home_name': f"[{home_rank}]{home_name}" if home_rank else home_name,
+            'away_name': f"[{away_rank}]{away_name}" if away_rank else away_name,
             'score':     score,
             'cur_odds':  f"{fmt_float(r[5])}/{fmt_float(r[6])}/{fmt_float(r[7])}",
         })
@@ -98,7 +100,8 @@ def query_recent_matches(mid: int) -> dict:
             mr.side, mr.match_id,
             mr.home_name, mr.away_name, mr.home_ft, mr.away_ft,
             wo.cur_win, wo.cur_draw, wo.cur_lose,
-            h30.win,    h30.draw,    h30.lose
+            h30.win,    h30.draw,    h30.lose,
+            mr.home_rank, mr.away_rank
         FROM match_recent mr
         LEFT JOIN odds_wh wo ON wo.schedule_id = mr.match_id
         LEFT JOIN (
@@ -126,9 +129,12 @@ def query_recent_matches(mid: int) -> dict:
         side = r[0]
         home_ft, away_ft = r[4], r[5]
         score = f"{home_ft}:{away_ft}" if home_ft is not None else '-'
+        home_name = r[2] or ''
+        away_name = r[3] or ''
+        home_rank, away_rank = r[12], r[13]
         result[side].append({
-            'home_name': r[2] or '',
-            'away_name': r[3] or '',
+            'home_name': f"[{home_rank}]{home_name}" if home_rank else home_name,
+            'away_name': f"[{away_rank}]{away_name}" if away_rank else away_name,
             'score':     score,
             'h30_odds':  f"{fmt_float(r[9])}/{fmt_float(r[10])}/{fmt_float(r[11])}",
             'cur_odds':  f"{fmt_float(r[6])}/{fmt_float(r[7])}/{fmt_float(r[8])}",

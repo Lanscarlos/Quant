@@ -31,6 +31,8 @@ def upsert_h2h_matches(conn: sqlite3.Connection, schedule_id: int, records: list
             r.get("ht_score"),
             r.get("handicap"),
             _int(r.get("hc_result")),
+            _int(r.get("home_rank")),
+            _int(r.get("away_rank")),
         )
         for r in records
         if r.get("match_id")
@@ -45,8 +47,9 @@ def upsert_h2h_matches(conn: sqlite3.Connection, schedule_id: int, records: list
                 home_id, home_name,
                 away_id, away_name,
                 home_ft, away_ft,
-                ht_score, handicap, hc_result
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ht_score, handicap, hc_result,
+                home_rank, away_rank
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )

@@ -56,6 +56,26 @@ def _strip_team_html(html_str: str) -> str:
     return soup.get_text(strip=True)
 
 
+def _parse_team_html(html_str: str) -> tuple[str, int | None]:
+    """从队名 HTML 中提取队名和排名。
+
+    title 属性格式:
+      h_data: "格拉茨风暴  排名:1"
+      v_data: "排名：3              "
+    """
+    soup = BeautifulSoup(str(html_str), "html.parser")
+    rank = None
+    span = soup.find("span", attrs={"title": True})
+    if span:
+        m = re.search(r"排名[:：]\s*(\d+)", span["title"])
+        if m:
+            rank = int(m.group(1))
+    for hp in soup.find_all("span", class_="hp"):
+        hp.decompose()
+    name = soup.get_text(strip=True)
+    return name, rank
+
+
 def _parse_match_array(html: str, data_var: str, limit: int = 6) -> list[dict]:
     """解析 h_data / a_data / v_data 内联 JS 数组。"""
     m = re.search(rf"var {data_var}\s*=\s*(\[.*?\]);", html, re.DOTALL)
@@ -72,13 +92,17 @@ def _parse_match_array(html: str, data_var: str, limit: int = 6) -> list[dict]:
             continue
         home_ft = int(entry[8]) if entry[8] != "" else 0
         away_ft = int(entry[9]) if entry[9] != "" else 0
+        home_name, home_rank = _parse_team_html(entry[5])
+        away_name, away_rank = _parse_team_html(entry[7])
         results.append({
             "date":      entry[0],
             "league":    entry[2],
             "home_id":   int(entry[4]),
-            "home_name": _strip_team_html(entry[5]),
+            "home_name": home_name,
+            "home_rank": home_rank,
             "away_id":   int(entry[6]),
-            "away_name": _strip_team_html(entry[7]),
+            "away_name": away_name,
+            "away_rank": away_rank,
             "home_ft":   home_ft,
             "away_ft":   away_ft,
             "ft_score":  f"{home_ft}-{away_ft}",
