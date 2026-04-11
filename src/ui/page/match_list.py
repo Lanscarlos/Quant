@@ -31,9 +31,6 @@ _TABLE_COLS = [
     {'name': 'detail',   'label': '详细信息',     'field': 'id',       'align': 'center', 'style': 'width:72px'},
 ]
 
-_PANEL_LEAGUES = ['胜赔', '章甲', '英超', '德甲', '西甲', '法甲', '荷甲', '欧冠']
-
-
 def _f(v) -> str:
     return f"{v:.2f}" if v is not None else '-'
 
@@ -50,6 +47,18 @@ def _query_filtered(ids: list) -> list[dict]:
                 COALESCE(at.team_name_cn, '') AS away_team,
                 COALESCE(l.league_name_cn, m.league_abbr, '') AS league,
                 o.open_win,  o.open_draw,  o.open_lose,
+                (SELECT win  FROM odds_wh_history
+                 WHERE schedule_id = m.schedule_id AND is_opening = 0
+                   AND change_time <= datetime(m.match_time, '-30 minutes')
+                 ORDER BY change_time DESC LIMIT 1) AS h30_win,
+                (SELECT draw FROM odds_wh_history
+                 WHERE schedule_id = m.schedule_id AND is_opening = 0
+                   AND change_time <= datetime(m.match_time, '-30 minutes')
+                 ORDER BY change_time DESC LIMIT 1) AS h30_draw,
+                (SELECT lose FROM odds_wh_history
+                 WHERE schedule_id = m.schedule_id AND is_opening = 0
+                   AND change_time <= datetime(m.match_time, '-30 minutes')
+                 ORDER BY change_time DESC LIMIT 1) AS h30_lose,
                 o.cur_win,   o.cur_draw,   o.cur_lose,
                 m.home_score, m.away_score
             FROM matches m
@@ -65,8 +74,9 @@ def _query_filtered(ids: list) -> list[dict]:
 
     result = []
     for i, r in enumerate(rows, 1):
-        hs, as_ = r[11], r[12]
+        hs, as_ = r[14], r[15]
         score = f"{hs}:{as_}" if hs is not None and as_ is not None else '-'
+        h30_str = f"{_f(r[8])} / {_f(r[9])} / {_f(r[10])}" if r[8] is not None else '-'
         result.append({
             'idx':       i,
             'id':        r[0],
@@ -75,65 +85,13 @@ def _query_filtered(ids: list) -> list[dict]:
             'away_team': r[3],
             'league':    r[4],
             'open_odds': f"{_f(r[5])} / {_f(r[6])} / {_f(r[7])}",
-            'h30_odds':  '-',
-            'cur_odds':  f"{_f(r[8])} / {_f(r[9])} / {_f(r[10])}",
+            'h30_odds':  h30_str,
+            'cur_odds':  f"{_f(r[11])} / {_f(r[12])} / {_f(r[13])}",
             'asian':     '-',
             'analysis':  '',
             'score':     score,
         })
     return result
-
-
-# ── UI helpers ────────────────────────────────────────────────────────────────
-
-def _render_odds_panel(system_name: str):
-    """搭配的平赔平局值面板（威廉/立博体系）。"""
-    with ui.card().classes('flex-1').props('flat').style(
-        'border:1px solid #e2e8f0; border-radius:4px; min-width:0'
-    ):
-        with ui.column().classes('w-full gap-0'):
-            # 标题
-            with ui.row().classes(
-                'w-full items-center justify-center py-1 bg-slate-50 border-b border-slate-200'
-            ):
-                ui.label(f'搭配的平赔平局值（{system_name}）') \
-                    .classes('text-xs font-medium text-slate-700')
-
-            # 列头
-            with ui.row().classes('w-full border-b border-slate-200 bg-slate-50'):
-                for lbl in _PANEL_LEAGUES:
-                    ui.label(lbl).classes(
-                        'flex-1 text-center text-xs text-slate-600 '
-                        'py-1 border-r border-slate-200'
-                    )
-                with ui.row().classes('items-center px-2 gap-0.5'):
-                    ui.label('其它').classes('text-xs text-slate-600')
-                    ui.icon('expand_more').classes('text-sm text-slate-400')
-
-            # 输入行
-            with ui.row().classes('w-full border-b border-slate-100'):
-                for _ in _PANEL_LEAGUES:
-                    ui.input(placeholder='点击输入') \
-                        .classes('flex-1 text-xs') \
-                        .props('dense borderless')
-                ui.input(placeholder='输入') \
-                    .classes('w-14 text-xs') \
-                    .props('dense borderless')
-
-            # 数据行（空白展示行）
-            for _ in range(5):
-                with ui.row().classes('w-full border-b border-slate-100'):
-                    for _ in range(len(_PANEL_LEAGUES) + 1):
-                        ui.label('-').classes('flex-1 text-center text-xs text-slate-300 py-1')
-
-            # 操作按钮
-            with ui.row().classes('w-full justify-center gap-3 py-2'):
-                ui.button('统计平赔', icon='calculate') \
-                    .props('outline size=sm') \
-                    .on('click', lambda: ui.notify('统计平赔功能待实现', type='info'))
-                ui.button('保存数据', icon='save') \
-                    .props('outline size=sm') \
-                    .on('click', lambda: ui.notify('保存数据功能待实现', type='info'))
 
 
 # ── Main render ───────────────────────────────────────────────────────────────
@@ -149,26 +107,19 @@ def render(on_match_click: callable = None):
         with ui.row().classes(
             'w-full items-center gap-2 px-4 py-2 bg-white border-b border-slate-200'
         ):
-            ui.icon('history').classes('text-xl text-blue-600')
-            ui.label('历史数据').classes('text-base font-bold text-slate-700 flex-1')
+            ui.icon('sports_soccer').classes('text-xl text-blue-600')
+            ui.label('赛事列表').classes('text-base font-bold text-slate-700 flex-1')
             err_label = ui.label('').classes('text-xs text-red-500')
+            refresh_btn = ui.button('刷新列表', icon='refresh').props('unelevated color=primary')
 
-        # ── 操作按钮行 ────────────────────────────────────────────────
+        # ── 提示行 ────────────────────────────────────────────────────
         with ui.row().classes(
-            'w-full items-center gap-2 px-4 py-2 bg-slate-50 '
-            'border-b border-slate-200 flex-wrap'
+            'w-full items-center gap-2 px-4 py-1.5 bg-blue-50 border-b border-blue-100'
         ):
-            recent10_btn   = ui.button('近十场分析数据', icon='analytics')    .props('outline size=sm')
-            time_btn       = ui.button('按时间检索',    icon='access_time')   .props('outline size=sm')
-            league_btn     = ui.button('按联赛检索',    icon='emoji_events')  .props('outline size=sm')
-            team_btn       = ui.button('按球队检索',    icon='group')         .props('outline size=sm')
-            odds_btn       = ui.button('按赔率检索',    icon='filter_list')   .props('outline size=sm')
-            export_img_btn = ui.button('另存为图片',    icon='image')         .props('outline size=sm')
-            print_btn      = ui.button('检索结果打印',  icon='print')         .props('outline size=sm')
-            save_btn       = ui.button('保存',          icon='save')          .props('outline size=sm')
-            home_btn       = ui.button('返回主界面',    icon='home')          .props('outline size=sm')
-            exit_btn       = ui.button('退出',          icon='exit_to_app')   .props('outline size=sm')
-            refresh_btn    = ui.button('刷新',          icon='refresh')       .props('outline size=sm')
+            ui.icon('info').classes('text-sm text-blue-400')
+            ui.label('请使用 Chrome 浏览器筛选赛事，筛选后点击「刷新列表」加载数据').classes(
+                'text-xs text-blue-600'
+            )
 
         # ── 主内容区 ──────────────────────────────────────────────────
         with ui.scroll_area().classes('w-full flex-1'):
@@ -215,10 +166,6 @@ def render(on_match_click: callable = None):
 
                     data_table()
 
-                # 底部两个平赔面板
-                with ui.row().classes('w-full gap-3 items-start'):
-                    for name in ('威廉体系', '立博体系'):
-                        _render_odds_panel(name)
 
     # ── 事件绑定 ──────────────────────────────────────────────────────
 
@@ -246,7 +193,7 @@ def render(on_match_click: callable = None):
         try:
             filter_ids[0], _ = await asyncio.gather(
                 run.io_bound(get_filtered_match_ids),
-                asyncio.sleep(random.uniform(0.5, 2.0)),
+                asyncio.sleep(random.uniform(0.1, 0.6)),
             )
             is_loading[0] = False
             _reload()
@@ -256,16 +203,6 @@ def render(on_match_click: callable = None):
         finally:
             refresh_btn.props(remove='loading disable')
 
-    recent10_btn.on_click(lambda: ui.notify('近十场分析数据功能待实现', type='info'))
-    time_btn.on_click(lambda: ui.notify('按时间检索功能待实现', type='info'))
-    league_btn.on_click(lambda: ui.notify('按联赛检索功能待实现', type='info'))
-    team_btn.on_click(lambda: ui.notify('按球队检索功能待实现', type='info'))
-    odds_btn.on_click(lambda: ui.notify('按赔率检索功能待实现', type='info'))
-    export_img_btn.on_click(lambda: ui.notify('另存为图片功能待实现', type='info'))
-    print_btn.on_click(lambda: ui.notify('打印功能待实现', type='info'))
-    save_btn.on_click(lambda: ui.notify('保存功能待实现', type='info'))
-    home_btn.on_click(lambda: ui.notify('已在主界面', type='info'))
-    exit_btn.on_click(lambda: ui.notify('退出功能待实现', type='info'))
     refresh_btn.on_click(_on_refresh)
 
     # 初始加载 + 自动抓取

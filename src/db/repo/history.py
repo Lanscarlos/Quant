@@ -41,6 +41,15 @@ def save_match(mid: int) -> int:
         "SELECT open_win, open_draw, open_lose, cur_win, cur_draw, cur_lose "
         "FROM odds_wh WHERE schedule_id = ?", (mid,)
     ).fetchone()
+    wh_h30 = qconn.execute("""
+        SELECT win, draw, lose FROM odds_wh_history
+        WHERE schedule_id = ? AND is_opening = 0
+          AND change_time <= datetime(
+                (SELECT match_time FROM matches WHERE schedule_id = ?),
+                '-30 minutes')
+        ORDER BY change_time DESC
+        LIMIT 1
+    """, (mid, mid)).fetchone()
     coral = qconn.execute(
         "SELECT open_win, open_draw, open_lose, cur_win, cur_draw, cur_lose "
         "FROM odds_coral WHERE schedule_id = ?", (mid,)
@@ -62,6 +71,7 @@ def save_match(mid: int) -> int:
                 home_rank, away_rank,
                 home_score, away_score, home_half_score, away_half_score,
                 wh_open_win, wh_open_draw, wh_open_lose,
+                wh_h30_win, wh_h30_draw, wh_h30_lose,
                 wh_cur_win, wh_cur_draw, wh_cur_lose,
                 coral_open_win, coral_open_draw, coral_open_lose,
                 coral_cur_win, coral_cur_draw, coral_cur_lose,
@@ -80,6 +90,7 @@ def save_match(mid: int) -> int:
                 ?, ?, ?,
                 ?, ?, ?,
                 ?, ?, ?,
+                ?, ?, ?,
                 ?, ?,
                 ?, ?, ?,
                 ?, ?, ?
@@ -89,6 +100,7 @@ def save_match(mid: int) -> int:
             match['home_rank'], match['away_rank'],
             match['home_score'], match['away_score'], match['home_half_score'], match['away_half_score'],
             wh[0] if wh else None, wh[1] if wh else None, wh[2] if wh else None,
+            wh_h30[0] if wh_h30 else None, wh_h30[1] if wh_h30 else None, wh_h30[2] if wh_h30 else None,
             wh[3] if wh else None, wh[4] if wh else None, wh[5] if wh else None,
             coral[0] if coral else None, coral[1] if coral else None, coral[2] if coral else None,
             coral[3] if coral else None, coral[4] if coral else None, coral[5] if coral else None,
@@ -158,27 +170,154 @@ def load_snapshot(schedule_id: int) -> dict | None:
     }
 
 
-def list_saved_matches() -> list[dict]:
-    """Query all saved matches for the history list page."""
+_ODDS_COLS = frozenset({
+    'wh_open_win', 'wh_open_draw', 'wh_open_lose',
+    'wh_cur_win', 'wh_cur_draw', 'wh_cur_lose',
+    'coral_open_win', 'coral_open_draw', 'coral_open_lose',
+    'coral_cur_win', 'coral_cur_draw', 'coral_cur_lose',
+})
+
+
+def backfill_h30() -> int:
+    """Backfill wh_h30_* columns for existing saved_matches rows that have NULL values.
+
+    Queries quant.db for each affected schedule_id. Silently skips matches
+    whose history is no longer in quant.db. Returns the number of rows updated.
+    """
+    hconn = get_history_conn()
+    qconn = get_conn()
+
+    null_rows = hconn.execute(
+        "SELECT id, schedule_id FROM saved_matches WHERE wh_h30_win IS NULL"
+    ).fetchall()
+    if not null_rows:
+        return 0
+
+    updated = 0
+    for row in null_rows:
+        saved_id, mid = row[0], row[1]
+        h30 = qconn.execute("""
+            SELECT win, draw, lose FROM odds_wh_history
+            WHERE schedule_id = ? AND is_opening = 0
+              AND change_time <= datetime(
+                    (SELECT match_time FROM matches WHERE schedule_id = ?),
+                    '-30 minutes')
+            ORDER BY change_time DESC
+            LIMIT 1
+        """, (mid, mid)).fetchone()
+        if not h30:
+            continue
+        with hconn:
+            hconn.execute(
+                "UPDATE saved_matches SET wh_h30_win=?, wh_h30_draw=?, wh_h30_lose=? WHERE id=?",
+                (h30[0], h30[1], h30[2], saved_id),
+            )
+        updated += 1
+    return updated
+
+
+def list_distinct_leagues() -> list[str]:
+    """Return sorted list of distinct league names in saved_matches."""
+    hconn = get_history_conn()
+    rows = hconn.execute(
+        "SELECT DISTINCT league FROM saved_matches WHERE league IS NOT NULL ORDER BY league"
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def list_distinct_teams() -> list[str]:
+    """Return sorted list of distinct team names (home + away combined) in saved_matches."""
     hconn = get_history_conn()
     rows = hconn.execute("""
+        SELECT DISTINCT team FROM (
+            SELECT home_team AS team FROM saved_matches WHERE home_team IS NOT NULL
+            UNION
+            SELECT away_team FROM saved_matches WHERE away_team IS NOT NULL
+        ) ORDER BY team
+    """).fetchall()
+    return [r[0] for r in rows]
+
+
+def list_saved_matches(filters: dict | None = None) -> list[dict]:
+    """Query saved matches for the history list page, with optional filtering.
+
+    Supported filter keys:
+      time_from  — match_time >= value
+      time_to    — match_time <= value + ' 23:59:59'
+      league     — list[str], exact IN match
+      team       — list[str], exact IN match on home/away (controlled by team_role)
+      team_role  — 'home' | 'away' | 'both' (default 'both')
+      odds_type  — column name (must be in _ODDS_COLS whitelist)
+      odds_min   — odds_type column >= value
+      odds_max   — odds_type column <= value
+      limit      — LIMIT n
+    """
+    hconn = get_history_conn()
+
+    conditions: list[str] = []
+    params: list = []
+
+    if filters:
+        if 'time_from' in filters:
+            conditions.append("match_time >= ?")
+            params.append(filters['time_from'])
+        if 'time_to' in filters:
+            conditions.append("match_time <= ?")
+            params.append(filters['time_to'] + ' 23:59:59')
+        if 'league' in filters:
+            vals = filters['league']
+            ph = ','.join('?' * len(vals))
+            conditions.append(f"league IN ({ph})")
+            params.extend(vals)
+        if 'team' in filters:
+            vals = filters['team']
+            ph = ','.join('?' * len(vals))
+            role = filters.get('team_role', 'both')
+            if role == 'home':
+                conditions.append(f"home_team IN ({ph})")
+                params.extend(vals)
+            elif role == 'away':
+                conditions.append(f"away_team IN ({ph})")
+                params.extend(vals)
+            else:
+                conditions.append(f"(home_team IN ({ph}) OR away_team IN ({ph}))")
+                params.extend(vals + vals)
+        col = filters.get('odds_type')
+        if col and col in _ODDS_COLS:
+            if 'odds_min' in filters:
+                conditions.append(f"{col} >= ?")
+                params.append(filters['odds_min'])
+            if 'odds_max' in filters:
+                conditions.append(f"{col} <= ?")
+                params.append(filters['odds_max'])
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    limit = f"LIMIT {int(filters['limit'])}" if filters and 'limit' in filters else ""
+
+    rows = hconn.execute(f"""
         SELECT id, schedule_id, saved_at, match_time,
                home_team, away_team, league,
                wh_open_win, wh_open_draw, wh_open_lose,
+               wh_h30_win, wh_h30_draw, wh_h30_lose,
                wh_cur_win, wh_cur_draw, wh_cur_lose,
                asian_cur_handicap, asian_cur_home, asian_cur_away,
                home_score, away_score, analysis_note
         FROM saved_matches
+        {where}
         ORDER BY saved_at DESC
-    """).fetchall()
+        {limit}
+    """, params).fetchall()
 
     result = []
     for i, r in enumerate(rows, 1):
-        hs, as_ = r[16], r[17]
+        hs, as_ = r[19], r[20]
         score = f"{hs}:{as_}" if hs is not None and as_ is not None else '-'
         asian_str = '-'
-        if r[13] is not None:
-            asian_str = f"{_fmt(r[14])} / {r[13]} / {_fmt(r[15])}"
+        if r[16] is not None:
+            asian_str = f"{_fmt(r[17])} / {r[16]} / {_fmt(r[18])}"
+        h30_str = '-'
+        if r[10] is not None:
+            h30_str = f"{_fmt(r[10])} / {_fmt(r[11])} / {_fmt(r[12])}"
         result.append({
             'idx':        i,
             'id':         r[1],  # schedule_id — used for row click
@@ -187,10 +326,10 @@ def list_saved_matches() -> list[dict]:
             'away_team':  r[5] or '',
             'league':     r[6] or '',
             'open_odds':  f"{_fmt(r[7])} / {_fmt(r[8])} / {_fmt(r[9])}",
-            'h30_odds':   '-',
-            'cur_odds':   f"{_fmt(r[10])} / {_fmt(r[11])} / {_fmt(r[12])}",
+            'h30_odds':   h30_str,
+            'cur_odds':   f"{_fmt(r[13])} / {_fmt(r[14])} / {_fmt(r[15])}",
             'asian':      asian_str,
-            'analysis':   r[18] or '',
+            'analysis':   r[21] or '',
             'score':      score,
         })
     return result

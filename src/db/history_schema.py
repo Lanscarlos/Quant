@@ -31,6 +31,9 @@ _DDL = [
         wh_open_win         REAL,
         wh_open_draw        REAL,
         wh_open_lose        REAL,
+        wh_h30_win          REAL,
+        wh_h30_draw         REAL,
+        wh_h30_lose         REAL,
         wh_cur_win          REAL,
         wh_cur_draw         REAL,
         wh_cur_lose         REAL,
@@ -91,3 +94,12 @@ def create_all(conn: sqlite3.Connection) -> None:
     with conn:
         for stmt in _DDL:
             conn.execute(stmt)
+        # Incremental migrations for existing databases
+        existing = {r[1] for r in conn.execute("PRAGMA table_info(saved_matches)")}
+        for col, ddl in [
+            ('wh_h30_win',  'ALTER TABLE saved_matches ADD COLUMN wh_h30_win  REAL'),
+            ('wh_h30_draw', 'ALTER TABLE saved_matches ADD COLUMN wh_h30_draw REAL'),
+            ('wh_h30_lose', 'ALTER TABLE saved_matches ADD COLUMN wh_h30_lose REAL'),
+        ]:
+            if col not in existing:
+                conn.execute(ddl)
