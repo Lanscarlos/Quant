@@ -92,6 +92,13 @@ def render(on_match_click: callable = None):
     cached_rows: list = [[]]
     active_filters: list = [{}]
 
+    # ── 筛选对话框内部状态 ─────────────────────────────────────────────
+    league_avail:      list = [[]]
+    league_sel:        list = [set()]
+    team_avail:        list = [[]]
+    team_sel:          list = [set()]
+    team_search_query: list = ['']
+
     with ui.column().classes('w-full h-full gap-0'):
 
         # ── 标题行 ────────────────────────────────────────────────────
@@ -127,7 +134,7 @@ def render(on_match_click: callable = None):
                 'w-full items-center gap-2 px-4 py-2 bg-blue-50 '
                 'border-b border-blue-200 flex-wrap'
             ):
-                ui.icon('filter_alt').classes('text-sm text-blue-500')
+                ui.icon('filter_alt').classes('text-xs text-blue-500')
                 ui.label('筛选条件').classes('text-xs font-medium text-blue-700')
 
                 if 'limit' in f:
@@ -166,8 +173,8 @@ def render(on_match_click: callable = None):
                             on_value_change=lambda e: _clear_filter('odds') if not e.value else None) \
                         .props('color=blue-2 text-color=blue-10 size=sm')
 
-                ui.button('清除全部', icon='clear_all', on_click=_clear_all_filters) \
-                    .props('flat size=sm color=blue-8').classes('ml-auto')
+                ui.button('重置', icon='clear_all', on_click=_clear_all_filters) \
+                    .props('flat dense size=sm color=blue-8').classes('ml-auto')
 
         filter_chips()
 
@@ -238,23 +245,61 @@ def render(on_match_click: callable = None):
             )).props('unelevated color=primary')
 
     # 按联赛检索
-    with ui.dialog() as league_dialog, ui.card().classes('w-96'):
-        ui.label('按联赛检索').classes('text-base font-bold text-slate-700 mb-1')
-        league_select = ui.select(options=[], label='选择联赛', multiple=True, with_input=True) \
-            .classes('w-full').props('outlined dense use-chips')
+    with ui.dialog() as league_dialog, ui.card().classes('w-[480px]'):
+        ui.label('按联赛检索').classes('text-base font-bold text-slate-700 mb-3')
 
-        with ui.row().classes('w-full justify-end gap-2 mt-3'):
+        @ui.refreshable
+        def _league_opts():
+            if not league_avail[0]:
+                with ui.row().classes('w-full justify-center py-6'):
+                    ui.label('暂无联赛数据').classes('text-xs text-slate-400')
+                return
+            with ui.row().classes('flex-wrap gap-2 py-1'):
+                for opt in league_avail[0]:
+                    is_sel = opt in league_sel[0]
+                    (ui.button(opt)
+                        .props(f'{"unelevated" if is_sel else "outline"} color=primary rounded')
+                        .on_click(lambda _, o=opt: _on_league_toggle(o)))
+
+        _league_opts()
+
+        with ui.row().classes('w-full justify-end gap-2 mt-4'):
             ui.button('清除', on_click=lambda: _apply_league_filter([])).props('flat')
-            ui.button('应用', on_click=lambda: _apply_league_filter(league_select.value or [])) \
+            ui.button('应用', on_click=lambda: _apply_league_filter(list(league_sel[0]))) \
                 .props('unelevated color=primary')
 
     # 按球队检索
-    with ui.dialog() as team_dialog, ui.card().classes('w-96'):
-        ui.label('按球队检索').classes('text-base font-bold text-slate-700 mb-1')
-        team_select = ui.select(options=[], label='选择球队', multiple=True, with_input=True) \
-            .classes('w-full').props('outlined dense use-chips')
+    with ui.dialog() as team_dialog, ui.card().classes('w-[520px]'):
+        ui.label('按球队检索').classes('text-base font-bold text-slate-700 mb-2')
 
-        with ui.column().classes('w-full gap-0.5 mt-2'):
+        team_search_input = ui.input(placeholder='搜索球队…') \
+            .props('outlined dense clearable').classes('w-full')
+
+        with ui.scroll_area().classes('w-full h-56 mt-2'):
+            @ui.refreshable
+            def _team_opts():
+                q = team_search_query[0].lower()
+                visible = [t for t in team_avail[0] if not q or q in t.lower()]
+                if not visible:
+                    with ui.row().classes('w-full justify-center py-6'):
+                        ui.label('无匹配球队').classes('text-xs text-slate-400')
+                    return
+                with ui.row().classes('flex-wrap gap-2 py-1 pr-2'):
+                    for opt in visible:
+                        is_sel = opt in team_sel[0]
+                        (ui.button(opt)
+                            .props(f'{"unelevated" if is_sel else "outline"} color=primary rounded')
+                            .on_click(lambda _, o=opt: _on_team_toggle(o)))
+
+            _team_opts()
+
+        def _on_team_search(e):
+            team_search_query[0] = e.value or ''
+            _team_opts.refresh()
+
+        team_search_input.on_value_change(_on_team_search)
+
+        with ui.column().classes('w-full gap-0.5 mt-3'):
             ui.label('检索范围').classes('text-xs text-slate-400')
             team_role_toggle = ui.toggle(
                 {'both': '全部', 'home': '仅主队', 'away': '仅客队'},
@@ -264,7 +309,7 @@ def render(on_match_click: callable = None):
         with ui.row().classes('w-full justify-end gap-2 mt-3'):
             ui.button('清除', on_click=lambda: _apply_team_filter([], 'both')).props('flat')
             ui.button('应用', on_click=lambda: _apply_team_filter(
-                team_select.value or [], team_role_toggle.value
+                list(team_sel[0]), team_role_toggle.value
             )).props('unelevated color=primary')
 
     # 按赔率检索
@@ -332,6 +377,16 @@ def render(on_match_click: callable = None):
         time_dialog.close()
         _reload()
 
+    def _on_league_toggle(name: str):
+        sel = league_sel[0]
+        sel.discard(name) if name in sel else sel.add(name)
+        _league_opts.refresh()
+
+    def _on_team_toggle(name: str):
+        sel = team_sel[0]
+        sel.discard(name) if name in sel else sel.add(name)
+        _team_opts.refresh()
+
     def _apply_league_filter(leagues: list):
         f = active_filters[0]
         f.pop('limit', None)
@@ -339,6 +394,7 @@ def render(on_match_click: callable = None):
             f['league'] = leagues
         else:
             f.pop('league', None)
+        league_sel[0] = set(leagues)
         league_dialog.close()
         _reload()
 
@@ -351,6 +407,7 @@ def render(on_match_click: callable = None):
         else:
             f.pop('team', None)
             f.pop('team_role', None)
+        team_sel[0] = set(teams)
         team_dialog.close()
         _reload()
 
@@ -379,16 +436,18 @@ def render(on_match_click: callable = None):
         _reload()
 
     def _on_open_league_dialog():
-        league_select.options = list_distinct_leagues()
-        league_select.update()
-        league_select.set_value(active_filters[0].get('league', []))
+        league_avail[0] = list_distinct_leagues()
+        league_sel[0] = set(active_filters[0].get('league', []))
+        _league_opts.refresh()
         league_dialog.open()
 
     def _on_open_team_dialog():
-        team_select.options = list_distinct_teams()
-        team_select.update()
-        team_select.set_value(active_filters[0].get('team', []))
+        team_avail[0] = list_distinct_teams()
+        team_sel[0] = set(active_filters[0].get('team', []))
+        team_search_query[0] = ''
+        team_search_input.set_value('')
         team_role_toggle.set_value(active_filters[0].get('team_role', 'both'))
+        _team_opts.refresh()
         team_dialog.open()
 
     def _on_refresh():
