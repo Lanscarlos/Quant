@@ -99,8 +99,6 @@ def render(on_match_click: callable = None):
             export_img_btn = ui.button('另存为图片',    icon='image')        .props('outline size=sm')
             print_btn      = ui.button('检索结果打印',  icon='print')        .props('outline size=sm')
             save_btn       = ui.button('保存',          icon='save')         .props('outline size=sm')
-            home_btn       = ui.button('返回主界面',    icon='home')         .props('outline size=sm')
-            exit_btn       = ui.button('退出',          icon='exit_to_app')  .props('outline size=sm')
             refresh_btn    = ui.button('刷新',          icon='refresh')      .props('outline size=sm')
 
         # ── 主内容区 ──────────────────────────────────────────────────
@@ -165,8 +163,6 @@ def render(on_match_click: callable = None):
     export_img_btn.on_click(lambda: ui.notify('另存为图片功能待实现', type='info'))
     print_btn.on_click(lambda: ui.notify('打印功能待实现', type='info'))
     save_btn.on_click(lambda: ui.notify('保存功能待实现', type='info'))
-    home_btn.on_click(lambda: ui.notify('已在主界面', type='info'))
-    exit_btn.on_click(lambda: ui.notify('退出功能待实现', type='info'))
     refresh_btn.on_click(_on_refresh)
 
     # 初始加载
