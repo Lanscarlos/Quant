@@ -1,6 +1,7 @@
 from nicegui import ui
 from src.ui.frame import navigation_bar
-from src.ui.page import dashboard, match_list, history
+from src.ui.page import dashboard, match_list
+from src.ui.page.history import index as history_index
 from src.ui.page.fetch import index as fetch_index
 from src.ui.page.conclusion import index as conclusion_index
 from src.ui.router import Router
@@ -38,10 +39,16 @@ def render():
         if _conclusion_trigger[0]:
             _conclusion_trigger[0](mid, source='history')
 
+    def _on_conclusion_back(source):
+        if source == 'history':
+            router.navigate('history')
+        else:
+            router.navigate('match_list')
+
     router.add('match_list',   lambda: match_list.render(on_match_click=_on_match_click))
     router.add('fetch',        lambda: fetch_index.render(on_complete=_on_fetch_complete))
-    router.add('conclusion',   conclusion_index.render)
-    router.add('history',      lambda: history.render(on_match_click=_on_history_match_click))
+    router.add('conclusion',   lambda: conclusion_index.render(on_back=_on_conclusion_back))
+    router.add('history',      lambda: history_index.render(on_match_click=_on_history_match_click))
     router.add('settings',     lambda: ui.label('⚙️ 设置页').classes('text-2xl'))
 
     with ui.row().classes('w-full h-screen gap-0'):

@@ -11,7 +11,7 @@ from .queries import load_all_from_quant
 from .renderers import render_asian_section, render_h2h_section, render_odds_section, render_recent_section, wdl_badges
 
 
-def _render_body(data: dict) -> None:
+def _render_body(data: dict, on_back=None, source: str = 'live') -> None:
     """渲染结论主体内容。data 是 load_all_from_quant / load_snapshot 返回的统一数据包。"""
     match = data['match']
     if not match:
@@ -44,7 +44,10 @@ def _render_body(data: dict) -> None:
             ui.button('历史数据页面', on_click=lambda: ui.notify('历史数据页面')).props('outline size=sm')
             ui.button('反向为图片',   on_click=lambda: ui.notify('反向为图片')).props('outline size=sm')
             ui.button('分析结果打印', on_click=lambda: ui.notify('分析结果打印')).props('outline size=sm')
-            ui.button('返回',         on_click=lambda: ui.notify('返回')).props('outline size=sm color=negative')
+            def _go_back():
+                if on_back:
+                    on_back(source)
+            ui.button('返回', on_click=_go_back).props('outline size=sm color=negative')
 
         ui.separator().classes('mb-2')
 
@@ -128,7 +131,7 @@ def _render_body(data: dict) -> None:
                 ui.textarea().classes('w-full').props('outlined dense rows=6')
 
 
-def render():
+def render(on_back: callable = None):
     state = {'mid': None, 'source': 'live'}
 
     # ── 布局 ──────────────────────────────────────────────────────────────────
@@ -155,7 +158,7 @@ def render():
                     ui.label('未找到赛事数据').classes('text-sm text-slate-400')
                     return
 
-                _render_body(data)
+                _render_body(data, on_back=on_back, source=state['source'])
 
             conclusion_body()
 
