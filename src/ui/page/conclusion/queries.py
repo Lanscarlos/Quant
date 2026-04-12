@@ -83,8 +83,8 @@ def query_h2h(mid: int) -> dict:
         score = f"{home_ft}:{away_ft}" if home_ft is not None else '-'
         result_rows.append({
             'side':      side,
-            'home_name': f"[{home_rank}]{home_name}" if home_rank else home_name,
-            'away_name': f"[{away_rank}]{away_name}" if away_rank else away_name,
+            'home_name': f"[{home_rank}] {home_name}" if home_rank else home_name,
+            'away_name': f"[{away_rank}] {away_name}" if away_rank else away_name,
             'score':     score,
             'cur_odds':  f"{fmt_float(r[5])}/{fmt_float(r[6])}/{fmt_float(r[7])}",
         })
@@ -133,8 +133,8 @@ def query_recent_matches(mid: int) -> dict:
         away_name = r[3] or ''
         home_rank, away_rank = r[12], r[13]
         result[side].append({
-            'home_name': f"[{home_rank}]{home_name}" if home_rank else home_name,
-            'away_name': f"[{away_rank}]{away_name}" if away_rank else away_name,
+            'home_name': f"[{home_rank}] {home_name}" if home_rank else home_name,
+            'away_name': f"[{away_rank}] {away_name}" if away_rank else away_name,
             'score':     score,
             'h30_odds':  f"{fmt_float(r[9])}/{fmt_float(r[10])}/{fmt_float(r[11])}",
             'cur_odds':  f"{fmt_float(r[6])}/{fmt_float(r[7])}/{fmt_float(r[8])}",
