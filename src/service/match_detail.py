@@ -185,6 +185,8 @@ def fetch_match_all(match_id: str | int, tracker=None) -> dict:
     from contextlib import nullcontext
     from datetime import datetime
     from src.db import get_conn
+    from src.db.repo.teams import ensure_team
+    from src.db.repo.matches import ensure_match_stub
     from src.db.repo.standings import upsert_standings
     from src.db.repo.recent_matches import upsert_recent_matches
     from src.db.repo.h2h_matches import upsert_h2h_matches
@@ -199,6 +201,18 @@ def fetch_match_all(match_id: str | int, tracker=None) -> dict:
 
     with _t('parse', '解析基本信息 + 联赛排名'):
         record = _parse_detail(html)
+
+    # 直接 URL 入口时 matches / teams 表可能尚无此行，需先写入骨架记录
+    # 以满足 match_standings / match_recent / match_h2h 的外键约束
+    with _t('ensure_base', '确保赛事与球队基础记录'):
+        sid  = int(record.get('schedule_id')  or 0)
+        htid = int(record.get('home_team_id') or 0)
+        atid = int(record.get('away_team_id') or 0)
+        if not (sid and htid and atid):
+            raise ValueError(f'页面缺少关键字段: schedule_id={sid}, home={htid}, away={atid}')
+        ensure_team(conn, htid, record.get('home_team', ''))
+        ensure_team(conn, atid, record.get('away_team', ''))
+        ensure_match_stub(conn, sid, record.get('match_time', ''), htid, atid)
 
     with _t('standings', '保存联赛排名'):
         upsert_standings(conn, record)

@@ -44,6 +44,19 @@ def upsert_teams(conn: sqlite3.Connection, records: list[dict]) -> int:
     return len(rows)
 
 
+def ensure_team(conn: sqlite3.Connection, team_id: int, name_cn: str) -> None:
+    """仅在球队不存在时插入一行最小骨架记录，不覆盖已有数据。
+
+    用于"直接 URL 抓取"场景：match_detail 页面能获取到 team_id 和中文队名，
+    但没有英文名；INSERT OR IGNORE 保证不会降级已有的完整行。
+    """
+    with conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO teams (team_id, team_name_cn) VALUES (?, ?)",
+            (team_id, name_cn or None),
+        )
+
+
 def _int(val) -> int | None:
     try:
         return int(val)

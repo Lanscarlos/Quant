@@ -58,6 +58,30 @@ def upsert_matches(conn: sqlite3.Connection, records: list[dict]) -> int:
     return len(rows)
 
 
+def ensure_match_stub(
+    conn: sqlite3.Connection,
+    schedule_id: int,
+    match_time: str,
+    home_team_id: int,
+    away_team_id: int,
+) -> None:
+    """仅在赛事不存在时插入一行最小骨架记录，不覆盖已有数据。
+
+    用于"直接 URL 抓取"场景：match_detail 只能提供基础字段，
+    league_abbr / 比分 / 红黄牌等留空，等 match_list 覆盖时由
+    upsert_matches（INSERT OR REPLACE）补齐。
+    """
+    with conn:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO matches
+                (schedule_id, match_time, status, home_team_id, away_team_id)
+            VALUES (?, ?, 0, ?, ?)
+            """,
+            (schedule_id, match_time, home_team_id, away_team_id),
+        )
+
+
 def _int(val) -> int | None:
     try:
         return int(val)
