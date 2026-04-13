@@ -36,8 +36,6 @@ def _render_body(data: dict, on_back=None, source: str = 'live') -> None:
                 ui.notify(f'保存失败：{exc}', type='negative')
 
         with ui.row().classes('w-full items-center gap-1 pb-2 flex-wrap'):
-            ui.button('点击获取数据1', on_click=lambda: ui.notify('点击获取数据1')).props('outline size=sm')
-            ui.button('点击获取数据2', on_click=lambda: ui.notify('点击获取数据2')).props('outline size=sm')
             ui.button('数据分析初始', on_click=lambda: ui.notify('数据分析初始')).props('outline size=sm')
             ui.button('结果保存',     on_click=_on_save).props('outline size=sm')
             ui.button('历史数据加载', on_click=lambda: ui.notify('历史数据加载')).props('outline size=sm')
