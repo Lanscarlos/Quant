@@ -45,9 +45,14 @@ def render():
         else:
             router.navigate('match_list')
 
+    def _on_conclusion_refetch(mid):
+        router.navigate('fetch')
+        if _fetch_trigger[0]:
+            _fetch_trigger[0](mid, force=True)
+
     router.add('match_list',   lambda: match_list.render(on_match_click=_on_match_click))
     router.add('fetch',        lambda: fetch_index.render(on_complete=_on_fetch_complete))
-    router.add('conclusion',   lambda: conclusion_index.render(on_back=_on_conclusion_back))
+    router.add('conclusion',   lambda: conclusion_index.render(on_back=_on_conclusion_back, on_refetch=_on_conclusion_refetch))
     router.add('history',      lambda: history_index.render(on_match_click=_on_history_match_click))
     router.add('settings',     lambda: ui.label('⚙️ 设置页').classes('text-2xl'))
 

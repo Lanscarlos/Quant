@@ -11,7 +11,7 @@ from .queries import load_all_from_quant
 from .renderers import render_asian_section, render_h2h_section, render_odds_section, render_recent_section, wdl_badges
 
 
-def _render_body(data: dict, on_back=None, source: str = 'live') -> None:
+def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live') -> None:
     """渲染结论主体内容。data 是 load_all_from_quant / load_snapshot 返回的统一数据包。"""
     match = data['match']
     if not match:
@@ -42,6 +42,10 @@ def _render_body(data: dict, on_back=None, source: str = 'live') -> None:
             ui.button('历史数据页面', on_click=lambda: ui.notify('历史数据页面')).props('outline size=sm')
             ui.button('反向为图片',   on_click=lambda: ui.notify('反向为图片')).props('outline size=sm')
             ui.button('分析结果打印', on_click=lambda: ui.notify('分析结果打印')).props('outline size=sm')
+            def _do_refetch():
+                if on_refetch:
+                    on_refetch(match['schedule_id'])
+            ui.button('重新抓取', icon='refresh', on_click=_do_refetch).props('outline size=sm color=warning')
             def _go_back():
                 if on_back:
                     on_back(source)
@@ -57,11 +61,11 @@ def _render_body(data: dict, on_back=None, source: str = 'live') -> None:
 
             # 主队（靠中间右对齐）
             with ui.column().classes('flex-1 items-end gap-0'):
-                ui.label(match['home_team']).classes('text-lg font-bold text-blue-700')
+                with ui.row().classes('items-baseline gap-1 justify-end'):
+                    if match['home_rank'] is not None:
+                        ui.label(str(match['home_rank'])).classes('text-sm text-slate-400')
+                    ui.label(match['home_team']).classes('text-lg font-bold text-blue-700')
                 with ui.row().classes('items-center gap-3'):
-                    with ui.row().classes('items-center gap-1'):
-                        ui.label('排名').classes('text-xs text-slate-400')
-                        ui.label(fmt_display(match['home_rank'])).classes('text-xs font-bold text-slate-600')
                     with ui.row().classes('items-center gap-1'):
                         ui.label('积分').classes('text-xs text-slate-400')
                         ui.label(fmt_display(extras.get('home_pts'))).classes('text-xs font-bold text-slate-600')
@@ -82,16 +86,16 @@ def _render_body(data: dict, on_back=None, source: str = 'live') -> None:
 
             # 客队（靠中间左对齐）
             with ui.column().classes('flex-1 items-start gap-0'):
-                ui.label(match['away_team']).classes('text-lg font-bold text-red-600')
+                with ui.row().classes('items-baseline gap-1'):
+                    if match['away_rank'] is not None:
+                        ui.label(str(match['away_rank'])).classes('text-sm text-slate-400')
+                    ui.label(match['away_team']).classes('text-lg font-bold text-red-600')
                 with ui.row().classes('items-center gap-3'):
                     if extras.get('away_wdl'):
                         wdl_badges(*extras['away_wdl'])
                     with ui.row().classes('items-center gap-1'):
                         ui.label('积分').classes('text-xs text-slate-400')
                         ui.label(fmt_display(extras.get('away_pts'))).classes('text-xs font-bold text-slate-600')
-                    with ui.row().classes('items-center gap-1'):
-                        ui.label('排名').classes('text-xs text-slate-400')
-                        ui.label(fmt_display(match['away_rank'])).classes('text-xs font-bold text-slate-600')
 
             # 右侧占位，平衡左边联赛标签宽度，保持整体居中
             ui.element('div').classes('w-20 shrink-0')
@@ -129,7 +133,7 @@ def _render_body(data: dict, on_back=None, source: str = 'live') -> None:
                 ui.textarea().classes('w-full').props('outlined dense rows=6')
 
 
-def render(on_back: callable = None):
+def render(on_back: callable = None, on_refetch: callable = None):
     state = {'mid': None, 'source': 'live'}
 
     # ── 布局 ──────────────────────────────────────────────────────────────────
@@ -156,7 +160,7 @@ def render(on_back: callable = None):
                     ui.label('未找到赛事数据').classes('text-sm text-slate-400')
                     return
 
-                _render_body(data, on_back=on_back, source=state['source'])
+                _render_body(data, on_back=on_back, on_refetch=on_refetch, source=state['source'])
 
             conclusion_body()
 

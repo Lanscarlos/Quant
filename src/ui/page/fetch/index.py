@@ -275,10 +275,12 @@ def render(on_complete=None):
     fetch_btn.on_click(_run_fetch)
     stop_btn.on_click(lambda: state.update(abort=True))
 
-    def trigger(mid: int | str) -> None:
-        """从外部跳入时调用：填入 URL 并自动开始抓取。"""
+    def trigger(mid: int | str, force: bool = False) -> None:
+        """从外部跳入时调用：填入 URL 并自动开始抓取。force=True 时自动勾选强制抓取。"""
         url = f"https://zq.titan007.com/analysis/{mid}sb.htm"
         match_input.set_value(url)
+        if force:
+            force_checkbox.set_value(True)
         ui.timer(0, _run_fetch, once=True)
 
     return trigger
