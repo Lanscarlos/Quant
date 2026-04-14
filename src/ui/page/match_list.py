@@ -7,6 +7,7 @@ External API:
 """
 import asyncio
 import random
+import subprocess
 
 from nicegui import ui, run
 
@@ -112,6 +113,8 @@ def render(on_match_click: callable = None):
             ui.icon('sports_soccer').classes('text-xl text-blue-600')
             ui.label('赛事列表').classes('text-base font-bold text-slate-700 flex-1')
             err_label = ui.label('').classes('text-xs text-red-500')
+            ui.button('打开赛事列表', icon='open_in_browser',
+                      on_click=lambda: subprocess.Popen(['cmd', '/c', 'start', 'chrome', 'https://live.titan007.com/oldIndexall.aspx'])).props('outline color=primary')
             refresh_btn = ui.button('刷新列表', icon='refresh').props('unelevated color=primary')
 
         # ── 提示行 ────────────────────────────────────────────────────
