@@ -1,104 +1,25 @@
 """
-历史数据 — 赛事列表页（新版）.
+赛事列表页.
 
-Displays historical match data with odds analysis panels.
 External API:
-  render(on_match_click) — registered with the Router
+  render(on_match_click) — 注册到 Router
+  返回值: set_refresh_interval(seconds) — 供设置页动态更新自动刷新间隔
 """
 import asyncio
 import random
 import subprocess
+from datetime import datetime, timedelta
 
 from nicegui import ui, run
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-from src.db import get_conn
 from src.service.browser_filter import get_filtered_match_ids
 from src.service.config import get_refresh_interval
 from src.service.freshness import match_ids_needing_refresh
-from src.service.match_detail import fetch_match_basics
-from src.service.live_score import fetch_live_score
 
+from .columns import TABLE_COLS
+from .queries import query_filtered
+from .refresh import hydrate_ids
 
-_TABLE_COLS = [
-    {'name': 'idx',      'label': '序号',         'field': 'idx',      'align': 'center', 'style': 'width:48px'},
-    {'name': 'time',     'label': '时间',         'field': 'match_time','align': 'center', 'style': 'width:130px'},
-    {'name': 'home',     'label': '主队',         'field': 'home_team','align': 'left'},
-    {'name': 'away',     'label': '客队',         'field': 'away_team','align': 'left'},
-    {'name': 'league',   'label': '联赛类型',     'field': 'league',   'align': 'left'},
-    {'name': 'open',     'label': '初始赔率',     'field': 'open_odds','align': 'center'},
-    {'name': 'h30',      'label': '赛前半小时赔率','field': 'h30_odds', 'align': 'center'},
-    {'name': 'cur',      'label': '最终赔率',     'field': 'cur_odds', 'align': 'center'},
-    {'name': 'asian',    'label': '最终亚盘',     'field': 'asian',    'align': 'center'},
-    {'name': 'analysis', 'label': '分析结论',     'field': 'analysis', 'align': 'left'},
-    {'name': 'result',   'label': '赛果输入',     'field': 'score',    'align': 'center'},
-    {'name': 'detail',   'label': '详细信息',     'field': 'id',       'align': 'center', 'style': 'width:72px'},
-]
-
-def _f(v) -> str:
-    return f"{v:.2f}" if v is not None else '-'
-
-
-def _query_filtered(ids: list) -> list[dict]:
-    conn = get_conn()
-    if ids:
-        placeholders = ",".join("?" * len(ids))
-        rows = conn.execute(f"""
-            SELECT
-                m.schedule_id,
-                m.match_time,
-                COALESCE(ht.team_name_cn, '') AS home_team,
-                COALESCE(at.team_name_cn, '') AS away_team,
-                COALESCE(m.league_name_cn, '') AS league,
-                o.open_win,  o.open_draw,  o.open_lose,
-                (SELECT win  FROM odds_wh_history
-                 WHERE schedule_id = m.schedule_id AND is_opening = 0
-                   AND change_time <= datetime(m.match_time, '-30 minutes')
-                 ORDER BY change_time DESC LIMIT 1) AS h30_win,
-                (SELECT draw FROM odds_wh_history
-                 WHERE schedule_id = m.schedule_id AND is_opening = 0
-                   AND change_time <= datetime(m.match_time, '-30 minutes')
-                 ORDER BY change_time DESC LIMIT 1) AS h30_draw,
-                (SELECT lose FROM odds_wh_history
-                 WHERE schedule_id = m.schedule_id AND is_opening = 0
-                   AND change_time <= datetime(m.match_time, '-30 minutes')
-                 ORDER BY change_time DESC LIMIT 1) AS h30_lose,
-                o.cur_win,   o.cur_draw,   o.cur_lose,
-                m.home_score, m.away_score
-            FROM matches m
-            LEFT JOIN teams   ht ON m.home_team_id = ht.team_id
-            LEFT JOIN teams   at ON m.away_team_id = at.team_id
-            LEFT JOIN odds_wh o  ON o.schedule_id  = m.schedule_id
-            WHERE CAST(m.schedule_id AS TEXT) IN ({placeholders})
-            ORDER BY m.match_time ASC
-        """, (*ids,)).fetchall()
-    else:
-        rows = []
-
-    result = []
-    for i, r in enumerate(rows, 1):
-        hs, as_ = r[14], r[15]
-        score = f"{hs}:{as_}" if hs is not None and as_ is not None else '-'
-        h30_str = f"{_f(r[8])} / {_f(r[9])} / {_f(r[10])}" if r[8] is not None else '-'
-        result.append({
-            'idx':       i,
-            'id':        r[0],
-            'match_time': r[1] or '-',
-            'home_team': r[2],
-            'away_team': r[3],
-            'league':    r[4],
-            'open_odds': f"{_f(r[5])} / {_f(r[6])} / {_f(r[7])}",
-            'h30_odds':  h30_str,
-            'cur_odds':  f"{_f(r[11])} / {_f(r[12])} / {_f(r[13])}",
-            'asian':     '-',
-            'analysis':  '',
-            'score':     score,
-        })
-    return result
-
-
-# ── Main render ───────────────────────────────────────────────────────────────
 
 def render(on_match_click: callable = None):
     cached_rows:  list = [[]]
@@ -106,7 +27,14 @@ def render(on_match_click: callable = None):
     is_loading:   list = [False]   # 控制表格 spinner 遮罩
     is_fetching:  list = [False]   # 重入保护：任何网络抓取任务的并发锁
 
-    with ui.column().classes('w-full h-full gap-0'):
+    # 倒计时状态：以绝对时间点驱动，避免 tick 抖动累积误差
+    interval_seconds: list = [get_refresh_interval()]
+    next_refresh_at:  list = [datetime.now() + timedelta(seconds=interval_seconds[0])]
+
+    def _reset_countdown() -> None:
+        next_refresh_at[0] = datetime.now() + timedelta(seconds=interval_seconds[0])
+
+    with ui.column().classes('w-full h-full gap-0 relative'):
 
         # ── 标题行 ────────────────────────────────────────────────────
         with ui.row().classes(
@@ -156,7 +84,7 @@ def render(on_match_click: callable = None):
                             return
 
                         tbl = (
-                            ui.table(columns=_TABLE_COLS, rows=rows, row_key='id')
+                            ui.table(columns=TABLE_COLS, rows=rows, row_key='id')
                             .classes('w-full text-xs')
                             .props('dense flat')
                         )
@@ -173,31 +101,19 @@ def render(on_match_click: callable = None):
 
                     data_table()
 
+        # ── 倒计时浮标（右下角） ──────────────────────────────────────
+        with ui.row().classes(
+            'absolute bottom-4 right-4 items-center gap-1.5 px-3 py-1.5 '
+            'bg-white/90 rounded-full shadow border border-slate-200 z-10'
+        ):
+            ui.icon('schedule').classes('text-sm text-slate-400')
+            countdown_label = ui.label('--').classes('text-xs font-mono text-slate-600')
 
     # ── 事件绑定 ──────────────────────────────────────────────────────
 
     def _reload():
-        cached_rows[0] = _query_filtered(filter_ids[0])
+        cached_rows[0] = query_filtered(filter_ids[0])
         data_table.refresh()
-
-    def _hydrate_ids(ids: list) -> None:
-        """并发抓取缺失/过期赛事的基础信息与实时比分（最多 6 线程）。"""
-        stale = match_ids_needing_refresh(ids)
-        if not stale:
-            return
-
-        def _one(mid: int) -> None:
-            basics = fetch_match_basics(mid)
-            mt = basics.get('match_time') if basics else None
-            fetch_live_score(mid, mt)
-
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            futures = [pool.submit(_one, mid) for mid in stale]
-            for f in as_completed(futures):
-                try:
-                    f.result()
-                except Exception:
-                    pass
 
     async def _on_fetch():
         if is_fetching[0]:
@@ -207,7 +123,7 @@ def render(on_match_click: callable = None):
         is_loading[0] = True
         data_table.refresh()
         try:
-            await run.io_bound(_hydrate_ids, filter_ids[0])
+            await run.io_bound(hydrate_ids, filter_ids[0])
             is_loading[0] = False
             _reload()
         except Exception as exc:
@@ -216,6 +132,7 @@ def render(on_match_click: callable = None):
             err_label.set_text(f'抓取失败：{exc}')
         finally:
             is_fetching[0] = False
+            _reset_countdown()
 
     async def _on_refresh():
         if is_fetching[0]:
@@ -237,21 +154,23 @@ def render(on_match_click: callable = None):
         finally:
             is_fetching[0] = False
             refresh_btn.props(remove='loading disable')
+            _reset_countdown()
 
     async def _auto_refresh():
-        """5 分钟周期静默刷新：重读 Chrome 白名单 + 补抓过期赛事，不显示 loading 遮罩。"""
+        """周期静默刷新：重读 Chrome 白名单 + 补抓过期赛事，不显示 loading 遮罩。"""
         if is_fetching[0]:
             return
         is_fetching[0] = True
         try:
             filter_ids[0] = await run.io_bound(get_filtered_match_ids)
-            await run.io_bound(_hydrate_ids, filter_ids[0])
-            cached_rows[0] = _query_filtered(filter_ids[0])
+            await run.io_bound(hydrate_ids, filter_ids[0])
+            cached_rows[0] = query_filtered(filter_ids[0])
             data_table.refresh()
         except Exception as exc:
             err_label.set_text(f'自动刷新失败：{exc}')
         finally:
             is_fetching[0] = False
+            _reset_countdown()
 
     refresh_btn.on_click(_on_refresh)
 
@@ -262,11 +181,28 @@ def render(on_match_click: callable = None):
         if match_ids_needing_refresh(filter_ids[0]):
             await _on_fetch()
 
-    ui.timer(0,   _auto_fetch,   once=True)                  # 首次挂载立即抓一次
-    refresh_timer = ui.timer(get_refresh_interval(), _auto_refresh)  # 按配置间隔静默刷新
+    ui.timer(0, _auto_fetch, once=True)                          # 首次挂载立即抓一次
+    refresh_timer = ui.timer(interval_seconds[0], _auto_refresh)  # 按配置间隔静默刷新
+
+    # ── 倒计时显示：每秒 tick 更新标签 ─────────────────────────────
+    def _tick_countdown():
+        if is_fetching[0]:
+            countdown_label.set_text('刷新中…')
+            countdown_label.classes(remove='text-slate-600', add='text-blue-600')
+            return
+        remaining = int((next_refresh_at[0] - datetime.now()).total_seconds())
+        remaining = max(0, remaining)
+        mins, secs = divmod(remaining, 60)
+        text = f'{mins}:{secs:02d} 后自动刷新' if mins else f'{secs} 秒后自动刷新'
+        countdown_label.set_text(text)
+        countdown_label.classes(remove='text-blue-600', add='text-slate-600')
+
+    ui.timer(1, _tick_countdown)
 
     def set_refresh_interval(seconds: int) -> None:
-        """供设置页调用，动态更新定时器间隔。"""
+        """供设置页调用，动态更新定时器间隔并重置倒计时。"""
+        interval_seconds[0] = seconds
         refresh_timer.interval = seconds
+        _reset_countdown()
 
     return set_refresh_interval

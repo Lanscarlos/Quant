@@ -1,6 +1,7 @@
 from nicegui import ui
 from src.ui.frame import navigation_bar
-from src.ui.page import dashboard, match_list
+from src.ui.page import dashboard
+from src.ui.page.match_list import index as match_list_index
 from src.ui.page.history import index as history_index
 from src.ui.page.fetch import index as fetch_index
 from src.ui.page.conclusion import index as conclusion_index
@@ -52,7 +53,7 @@ def render():
         if _fetch_trigger[0]:
             _fetch_trigger[0](mid, force=True)
 
-    router.add('match_list',   lambda: match_list.render(on_match_click=_on_match_click))
+    router.add('match_list',   lambda: match_list_index.render(on_match_click=_on_match_click))
     router.add('fetch',        lambda: fetch_index.render(on_complete=_on_fetch_complete))
     router.add('conclusion',   lambda: conclusion_index.render(on_back=_on_conclusion_back, on_refetch=_on_conclusion_refetch))
     router.add('history',      lambda: history_index.render(on_match_click=_on_history_match_click))
