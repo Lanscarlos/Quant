@@ -4,6 +4,7 @@ from src.ui.page import dashboard, match_list
 from src.ui.page.history import index as history_index
 from src.ui.page.fetch import index as fetch_index
 from src.ui.page.conclusion import index as conclusion_index
+from src.ui.page.settings import index as settings_index
 from src.ui.router import Router
 
 PORT = 19193
@@ -20,9 +21,10 @@ def render():
     router = Router()
 
     # 用 holder 打破初始化顺序依赖：render 回调在 mount 之前定义，
-    # 但 trigger 在 mount 之后才能拿到。
+    # 但 trigger/api 在 mount 之后才能拿到。
     _fetch_trigger: list = [None]
     _conclusion_trigger: list = [None]
+    _match_list_set_interval: list = [None]
 
     def _on_match_click(mid):
         router.navigate('fetch')
@@ -54,7 +56,11 @@ def render():
     router.add('fetch',        lambda: fetch_index.render(on_complete=_on_fetch_complete))
     router.add('conclusion',   lambda: conclusion_index.render(on_back=_on_conclusion_back, on_refetch=_on_conclusion_refetch))
     router.add('history',      lambda: history_index.render(on_match_click=_on_history_match_click))
-    router.add('settings',     lambda: ui.label('⚙️ 设置页').classes('text-2xl'))
+    def _on_interval_change(seconds: int):
+        if _match_list_set_interval[0]:
+            _match_list_set_interval[0](seconds)
+
+    router.add('settings',     lambda: settings_index.render(on_interval_change=_on_interval_change))
 
     with ui.row().classes('w-full h-screen gap-0'):
         navigation_bar.render(router)
@@ -63,5 +69,6 @@ def render():
 
     _fetch_trigger[0] = router.get_api('fetch')
     _conclusion_trigger[0] = router.get_api('conclusion')
+    _match_list_set_interval[0] = router.get_api('match_list')
 
     router.navigate('match_list')

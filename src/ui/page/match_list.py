@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.db import get_conn
 from src.service.browser_filter import get_filtered_match_ids
+from src.service.config import get_refresh_interval
 from src.service.freshness import match_ids_needing_refresh
 from src.service.match_detail import fetch_match_basics
 from src.service.live_score import fetch_live_score
@@ -100,9 +101,10 @@ def _query_filtered(ids: list) -> list[dict]:
 # ── Main render ───────────────────────────────────────────────────────────────
 
 def render(on_match_click: callable = None):
-    cached_rows: list = [[]]
-    filter_ids: list = [get_filtered_match_ids()]
-    is_loading: list = [False]
+    cached_rows:  list = [[]]
+    filter_ids:   list = [get_filtered_match_ids()]
+    is_loading:   list = [False]   # 控制表格 spinner 遮罩
+    is_fetching:  list = [False]   # 重入保护：任何网络抓取任务的并发锁
 
     with ui.column().classes('w-full h-full gap-0'):
 
@@ -198,6 +200,9 @@ def render(on_match_click: callable = None):
                     pass
 
     async def _on_fetch():
+        if is_fetching[0]:
+            return
+        is_fetching[0] = True
         err_label.set_text('')
         is_loading[0] = True
         data_table.refresh()
@@ -209,8 +214,13 @@ def render(on_match_click: callable = None):
             is_loading[0] = False
             data_table.refresh()
             err_label.set_text(f'抓取失败：{exc}')
+        finally:
+            is_fetching[0] = False
 
     async def _on_refresh():
+        if is_fetching[0]:
+            return
+        is_fetching[0] = True
         refresh_btn.props(add='loading disable')
         is_loading[0] = True
         data_table.refresh()
@@ -225,7 +235,23 @@ def render(on_match_click: callable = None):
             is_loading[0] = False
             data_table.refresh()
         finally:
+            is_fetching[0] = False
             refresh_btn.props(remove='loading disable')
+
+    async def _auto_refresh():
+        """5 分钟周期静默刷新：重读 Chrome 白名单 + 补抓过期赛事，不显示 loading 遮罩。"""
+        if is_fetching[0]:
+            return
+        is_fetching[0] = True
+        try:
+            filter_ids[0] = await run.io_bound(get_filtered_match_ids)
+            await run.io_bound(_hydrate_ids, filter_ids[0])
+            cached_rows[0] = _query_filtered(filter_ids[0])
+            data_table.refresh()
+        except Exception as exc:
+            err_label.set_text(f'自动刷新失败：{exc}')
+        finally:
+            is_fetching[0] = False
 
     refresh_btn.on_click(_on_refresh)
 
@@ -236,4 +262,11 @@ def render(on_match_click: callable = None):
         if match_ids_needing_refresh(filter_ids[0]):
             await _on_fetch()
 
-    ui.timer(0, _auto_fetch, once=True)
+    ui.timer(0,   _auto_fetch,   once=True)                  # 首次挂载立即抓一次
+    refresh_timer = ui.timer(get_refresh_interval(), _auto_refresh)  # 按配置间隔静默刷新
+
+    def set_refresh_interval(seconds: int) -> None:
+        """供设置页调用，动态更新定时器间隔。"""
+        refresh_timer.interval = seconds
+
+    return set_refresh_interval
