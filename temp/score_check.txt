@@ -1,0 +1,31 @@
+=== 比分相关 JS 变量 ===
+  hometeam = '里斯本竞技'
+  guestteam = '阿森纳'
+  scoreColor = '[]'
+  totalScoreStr = '[]'
+  homeScoreStr = '[]'
+  guestScoreStr = '[]'
+
+=== 页面文字中的比分格式 ===
+['3:00', '11:21']
+
+=== matchState 上下文 ===
+w();</script-->
+
+        <script language="javascript">
+
+            var lang = 0;
+
+            var matchState = 0;
+
+            var scheduleID = 2963060;
+
+            var h2h_home = 466;
+
+            var h2h_away = 19;
+
+            var hometeam = "里斯本竞技";
+
+            var guestteam = "阿森纳";
+
+      

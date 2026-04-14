@@ -1,0 +1,22 @@
+=== 2975608 期望比分 4-0 ===
+  str hometeam = '国家宪兵队'
+  str guestteam = 'AS ZAM'
+  str strTime = '2026-04-13 23:30'
+  int lang = 0
+  int matchState = 1
+  int scheduleID = 2975608
+  int h2h_home = 36947
+  int h2h_away = 77375
+  int isShowIntegral = 0
+
+=== 2974720 期望比分 2-1 ===
+  str hometeam = 'AS OTR'
+  str guestteam = '索科德'
+  str strTime = '2026-04-13 23:30'
+  int lang = 0
+  int matchState = 0
+  int scheduleID = 2974720
+  int h2h_home = 36331
+  int h2h_away = 38570
+  int isShowIntegral = 0
+

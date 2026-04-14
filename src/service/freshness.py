@@ -37,31 +37,37 @@ _LIST_THRESHOLDS: dict[int, timedelta] = {
 }
 
 
-def should_fetch_match_list(filter_ids: list[int]) -> bool:
-    """filter_ids 中有任意一场数据缺失或过期则返回 True。
+def match_ids_needing_refresh(filter_ids: list[int]) -> list[int]:
+    """返回 filter_ids 中需要重新抓取的 ID 子集。
 
-    完场 (-1) 永不重抓；进行中 2 分钟过期；未开赛 10 分钟过期。
+    规则：
+      - 在 DB 中找不到记录 → 需抓
+      - status = -1（完场）    → 跳过（永不重抓）
+      - 其他状态              → 按 _LIST_THRESHOLDS 判断 fetched_at 是否过期
     """
     if not filter_ids:
-        return False
+        return []
 
     placeholders = ",".join("?" * len(filter_ids))
     rows = get_conn().execute(
-        f"SELECT status, fetched_at FROM matches WHERE schedule_id IN ({placeholders})",
+        f"SELECT schedule_id, status, fetched_at FROM matches"
+        f" WHERE schedule_id IN ({placeholders})",
         filter_ids,
     ).fetchall()
 
-    if len(rows) < len(filter_ids):
-        return True  # 有 ID 不在库里
-
-    for status, fetched_at in rows:
+    found = {int(r[0]): (int(r[1]), r[2]) for r in rows}
+    result = []
+    for mid in filter_ids:
+        if mid not in found:
+            result.append(mid)   # 库里没有 → 需抓
+            continue
+        status, fetched_at = found[mid]
         if status == -1:
-            continue  # 完场：永不重抓
+            continue             # 完场 → 永不重抓
         threshold = _LIST_THRESHOLDS.get(status, timedelta(minutes=10))
         if _is_stale(fetched_at, threshold):
-            return True
-
-    return False
+            result.append(mid)
+    return result
 
 
 # ── match_detail ──────────────────────────────────────────────────────────────

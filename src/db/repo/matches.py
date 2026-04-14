@@ -58,6 +58,59 @@ def upsert_matches(conn: sqlite3.Connection, records: list[dict]) -> int:
     return len(rows)
 
 
+def upsert_match_basics(
+    conn: sqlite3.Connection,
+    schedule_id: int,
+    match_time: str,
+    home_team_id: int,
+    away_team_id: int,
+    league_name_cn: str | None = None,
+) -> None:
+    """插入或更新赛事基础信息（列表页专用）。
+
+    使用 INSERT ... ON CONFLICT DO UPDATE，对已有行只更新非空字段，
+    同时刷新 fetched_at（供 freshness 判断是否需要重抓）。
+    """
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO matches
+                (schedule_id, match_time, status, home_team_id, away_team_id, league_name_cn)
+            VALUES (?, ?, 0, ?, ?, ?)
+            ON CONFLICT(schedule_id) DO UPDATE SET
+                match_time     = excluded.match_time,
+                home_team_id   = excluded.home_team_id,
+                away_team_id   = excluded.away_team_id,
+                league_name_cn = COALESCE(excluded.league_name_cn, matches.league_name_cn),
+                fetched_at     = datetime('now', '+8 hours')
+            """,
+            (schedule_id, match_time, home_team_id, away_team_id, league_name_cn),
+        )
+
+
+def upsert_match_score(
+    conn: sqlite3.Connection,
+    schedule_id: int,
+    home_score: int,
+    away_score: int,
+    status: int,
+) -> None:
+    """更新赛事比分与状态。
+
+    若数据库中已是完赛状态（status=-1），则不再覆盖（幂等）。
+    """
+    with conn:
+        conn.execute(
+            """
+            UPDATE matches
+            SET home_score = ?, away_score = ?, status = ?
+            WHERE schedule_id = ?
+              AND (status != -1 OR ? = -1)
+            """,
+            (home_score, away_score, status, schedule_id, status),
+        )
+
+
 def ensure_match_stub(
     conn: sqlite3.Connection,
     schedule_id: int,
@@ -67,9 +120,8 @@ def ensure_match_stub(
 ) -> None:
     """仅在赛事不存在时插入一行最小骨架记录，不覆盖已有数据。
 
-    用于"直接 URL 抓取"场景：match_detail 只能提供基础字段，
-    league_abbr / 比分 / 红黄牌等留空，等 match_list 覆盖时由
-    upsert_matches（INSERT OR REPLACE）补齐。
+    用于详情页流水线外键约束所需的最小占位行，
+    不覆盖已有数据（INSERT OR IGNORE）。
     """
     with conn:
         conn.execute(

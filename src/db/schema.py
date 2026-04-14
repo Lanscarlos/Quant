@@ -51,6 +51,7 @@ _DDL = [
         away_red_cards    INTEGER DEFAULT 0,
         home_yellow_cards INTEGER DEFAULT 0,
         away_yellow_cards INTEGER DEFAULT 0,
+        league_name_cn    TEXT,
         fetched_at        TEXT    NOT NULL DEFAULT (datetime('now', '+8 hours'))
     )
     """,
@@ -318,6 +319,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "match_recent", "away_rank", "INTEGER")
     _add_column_if_missing(conn, "match_h2h", "home_rank", "INTEGER")
     _add_column_if_missing(conn, "match_h2h", "away_rank", "INTEGER")
+    _add_column_if_missing(conn, "matches", "league_name_cn", "TEXT")
 
 
 def _add_column_if_missing(

@@ -10,10 +10,13 @@ import random
 
 from nicegui import ui, run
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from src.db import get_conn
-from src.service.match_list import fetch_match_list
 from src.service.browser_filter import get_filtered_match_ids
-from src.service.freshness import should_fetch_match_list
+from src.service.freshness import match_ids_needing_refresh
+from src.service.match_detail import fetch_match_basics
+from src.service.live_score import fetch_live_score
 
 
 _TABLE_COLS = [
@@ -45,7 +48,7 @@ def _query_filtered(ids: list) -> list[dict]:
                 m.match_time,
                 COALESCE(ht.team_name_cn, '') AS home_team,
                 COALESCE(at.team_name_cn, '') AS away_team,
-                COALESCE(l.league_name_cn, m.league_abbr, '') AS league,
+                COALESCE(m.league_name_cn, '') AS league,
                 o.open_win,  o.open_draw,  o.open_lose,
                 (SELECT win  FROM odds_wh_history
                  WHERE schedule_id = m.schedule_id AND is_opening = 0
@@ -64,8 +67,7 @@ def _query_filtered(ids: list) -> list[dict]:
             FROM matches m
             LEFT JOIN teams   ht ON m.home_team_id = ht.team_id
             LEFT JOIN teams   at ON m.away_team_id = at.team_id
-            LEFT JOIN leagues l  ON m.league_abbr  = l.league_abbr
-            LEFT JOIN odds_wh o ON o.schedule_id = m.schedule_id
+            LEFT JOIN odds_wh o  ON o.schedule_id  = m.schedule_id
             WHERE CAST(m.schedule_id AS TEXT) IN ({placeholders})
             ORDER BY m.match_time ASC
         """, (*ids,)).fetchall()
@@ -173,12 +175,31 @@ def render(on_match_click: callable = None):
         cached_rows[0] = _query_filtered(filter_ids[0])
         data_table.refresh()
 
+    def _hydrate_ids(ids: list) -> None:
+        """并发抓取缺失/过期赛事的基础信息与实时比分（最多 6 线程）。"""
+        stale = match_ids_needing_refresh(ids)
+        if not stale:
+            return
+
+        def _one(mid: int) -> None:
+            basics = fetch_match_basics(mid)
+            mt = basics.get('match_time') if basics else None
+            fetch_live_score(mid, mt)
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures = [pool.submit(_one, mid) for mid in stale]
+            for f in as_completed(futures):
+                try:
+                    f.result()
+                except Exception:
+                    pass
+
     async def _on_fetch():
         err_label.set_text('')
         is_loading[0] = True
         data_table.refresh()
         try:
-            await run.io_bound(fetch_match_list)
+            await run.io_bound(_hydrate_ids, filter_ids[0])
             is_loading[0] = False
             _reload()
         except Exception as exc:
@@ -205,11 +226,11 @@ def render(on_match_click: callable = None):
 
     refresh_btn.on_click(_on_refresh)
 
-    # 初始加载 + 自动抓取
+    # 初始加载 + 自动抓取缺失/过期赛事
     _reload()
 
     async def _auto_fetch():
-        if should_fetch_match_list(filter_ids[0]):
+        if match_ids_needing_refresh(filter_ids[0]):
             await _on_fetch()
 
     ui.timer(0, _auto_fetch, once=True)

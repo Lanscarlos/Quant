@@ -23,6 +23,19 @@ _HEADERS = {
 }
 
 _STAT_COLS = ["played", "W", "D", "L", "GF", "GA", "GD", "pts", "rank", "win_rate"]
+
+
+def _parse_title_league(html: str) -> str:
+    """从 <title> 提取联赛中文名。
+
+    title 格式：'主队 VS 客队(YYYY-YYYY赛季{联赛名})-数据分析-...'
+    提取括号内内容并去掉赛季前缀，如 '2025-2026赛季欧冠杯' → '欧冠杯'。
+    """
+    m = re.search(r"<title>[^<]*?\((.+?)\)", html)
+    if not m:
+        return ""
+    raw = m.group(1).strip()
+    return re.sub(r"^\d{4}-\d{4}(赛季)?", "", raw).strip()
 _ROW_LABELS = ["total", "home", "away", "last6"]
 
 # 表格第一列文字 → scope 名，用于按标签定位数据行（免受表头行数影响）
@@ -165,13 +178,14 @@ def _split_stacked_standings(inner_table) -> list[tuple[str, list]]:
 
 def _parse_detail(html: str) -> dict:
     record: dict = {}
-    record["schedule_id"]  = _js_int(html, "scheduleID")
-    record["match_state"]  = _js_int(html, "matchState")
-    record["home_team_id"] = _js_int(html, "h2h_home")
-    record["away_team_id"] = _js_int(html, "h2h_away")
-    record["home_team"]    = _js_str(html, "hometeam")
-    record["away_team"]    = _js_str(html, "guestteam")
-    record["match_time"]   = _js_str(html, "strTime")
+    record["schedule_id"]   = _js_int(html, "scheduleID")
+    record["match_state"]   = _js_int(html, "matchState")
+    record["home_team_id"]  = _js_int(html, "h2h_home")
+    record["away_team_id"]  = _js_int(html, "h2h_away")
+    record["home_team"]     = _js_str(html, "hometeam")
+    record["away_team"]     = _js_str(html, "guestteam")
+    record["match_time"]    = _js_str(html, "strTime")
+    record["league_name_cn"] = _parse_title_league(html)
 
     soup = BeautifulSoup(html, "html.parser")
     porlet5 = soup.find("div", id="porlet_5")
@@ -228,7 +242,7 @@ def fetch_match_all(match_id: str | int, tracker=None) -> dict:
     from datetime import datetime
     from src.db import get_conn
     from src.db.repo.teams import ensure_team
-    from src.db.repo.matches import ensure_match_stub
+    from src.db.repo.matches import ensure_match_stub, upsert_match_basics
     from src.db.repo.standings import upsert_standings
     from src.db.repo.recent_matches import upsert_recent_matches
     from src.db.repo.h2h_matches import upsert_h2h_matches
@@ -254,7 +268,13 @@ def fetch_match_all(match_id: str | int, tracker=None) -> dict:
             raise ValueError(f'页面缺少关键字段: schedule_id={sid}, home={htid}, away={atid}')
         ensure_team(conn, htid, record.get('home_team', ''))
         ensure_team(conn, atid, record.get('away_team', ''))
-        ensure_match_stub(conn, sid, record.get('match_time', ''), htid, atid)
+        # 用 upsert_match_basics 代替 ensure_match_stub，额外写入联赛名
+        upsert_match_basics(
+            conn, sid,
+            record.get('match_time', ''),
+            htid, atid,
+            league_name_cn=record.get('league_name_cn') or None,
+        )
 
     with _t('standings', '保存联赛排名'):
         upsert_standings(conn, record)
@@ -327,3 +347,48 @@ def fetch_match_time(match_id: str | int) -> str | None:
         return _js_str(html, "strTime") or None
     except Exception:
         return None
+
+
+def fetch_match_basics(match_id: str | int) -> dict | None:
+    """轻量抓取赛事基础信息（不写 standings/recent/h2h）。
+
+    适用于列表页首次加载时为缺失赛事填充骨架：
+      - matches 表写入 schedule_id / match_time / home/away_team_id / league_name_cn
+      - teams   表写入 team_id / team_name_cn（INSERT OR IGNORE）
+
+    Returns:
+        {'schedule_id', 'match_time', 'league_name_cn', 'home_team', 'away_team'}
+        或 None（网络/解析失败）。
+    """
+    from src.db import get_conn
+    from src.db.repo.teams import ensure_team
+    from src.db.repo.matches import upsert_match_basics
+
+    try:
+        html = _fetch_html(match_id)
+    except Exception:
+        return None
+
+    sid   = int(_js_int(html, "scheduleID") or 0)
+    htid  = int(_js_int(html, "h2h_home")   or 0)
+    atid  = int(_js_int(html, "h2h_away")   or 0)
+    if not (sid and htid and atid):
+        return None
+
+    mt           = _js_str(html, "strTime")
+    home_name    = _js_str(html, "hometeam")
+    away_name    = _js_str(html, "guestteam")
+    league_name  = _parse_title_league(html) or None
+
+    conn = get_conn()
+    ensure_team(conn, htid, home_name)
+    ensure_team(conn, atid, away_name)
+    upsert_match_basics(conn, sid, mt, htid, atid, league_name_cn=league_name)
+
+    return {
+        "schedule_id":    sid,
+        "match_time":     mt,
+        "league_name_cn": league_name,
+        "home_team":      home_name,
+        "away_team":      away_name,
+    }
