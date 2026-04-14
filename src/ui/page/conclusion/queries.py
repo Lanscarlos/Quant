@@ -18,13 +18,21 @@ def query_match(mid: int) -> dict | None:
     r = conn.execute("""
         SELECT m.schedule_id, m.match_time, m.status,
                m.home_score, m.away_score, m.home_half_score, m.away_half_score,
-               m.home_rank, m.away_rank,
+               COALESCE(sh.rank, m.home_rank) AS home_rank,
+               COALESCE(sa.rank, m.away_rank) AS away_rank,
                ht.team_name_cn, at.team_name_cn,
                COALESCE(l.league_name_cn, m.league_abbr, '') AS league
         FROM matches m
-        LEFT JOIN teams ht ON m.home_team_id = ht.team_id
-        LEFT JOIN teams at ON m.away_team_id = at.team_id
-        LEFT JOIN leagues l  ON m.league_abbr = l.league_abbr
+        LEFT JOIN teams   ht ON m.home_team_id = ht.team_id
+        LEFT JOIN teams   at ON m.away_team_id = at.team_id
+        LEFT JOIN leagues l  ON m.league_abbr  = l.league_abbr
+        -- 优先取详情页联赛排名（ft/total），兜底用赛事列表快照
+        LEFT JOIN match_standings sh
+               ON sh.schedule_id = m.schedule_id
+              AND sh.side = 'home' AND sh.period = 'ft' AND sh.scope = 'total'
+        LEFT JOIN match_standings sa
+               ON sa.schedule_id = m.schedule_id
+              AND sa.side = 'away' AND sa.period = 'ft' AND sa.scope = 'total'
         WHERE m.schedule_id = ?
     """, (mid,)).fetchone()
     if not r:

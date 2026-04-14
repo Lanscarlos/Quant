@@ -25,6 +25,9 @@ _HEADERS = {
 _STAT_COLS = ["played", "W", "D", "L", "GF", "GA", "GD", "pts", "rank", "win_rate"]
 _ROW_LABELS = ["total", "home", "away", "last6"]
 
+# 表格第一列文字 → scope 名，用于按标签定位数据行（免受表头行数影响）
+_SCOPE_LABEL_MAP = {'总': 'total', '主': 'home', '客': 'away', '近6': 'last6'}
+
 
 def _fetch_html(match_id: str | int) -> str:
     url = f"https://zq.titan007.com/analysis/{match_id}sb.htm"
@@ -60,14 +63,15 @@ def _parse_team_html(html_str: str) -> tuple[str, int | None]:
     """从队名 HTML 中提取队名和排名。
 
     title 属性格式:
-      h_data: "格拉茨风暴  排名:1"
-      v_data: "排名：3              "
+      同联赛赛事: "格拉茨风暴  排名:1"
+      跨联赛赛事: "阿森纳  排名:英超1"  （联赛名前缀 + 排名数字）
     """
     soup = BeautifulSoup(str(html_str), "html.parser")
     rank = None
     span = soup.find("span", attrs={"title": True})
     if span:
-        m = re.search(r"排名[:：]\s*(\d+)", span["title"])
+        # [^\d]* 跳过可能的联赛名前缀，取末尾数字
+        m = re.search(r"排名[:：][^\d]*(\d+)", span["title"])
         if m:
             rank = int(m.group(1))
     for hp in soup.find_all("span", class_="hp"):
@@ -119,16 +123,42 @@ def _parse_match_array(html: str, data_var: str, limit: int = 6) -> list[dict]:
 
 # ── 排名表格解析 ─────────────────────────────────────────────────────────────
 
-def _parse_stats_table(table) -> dict:
-    rows = table.find_all("tr")
+def _parse_stats_from_rows(rows) -> dict:
+    """从行列表中按第一列标签提取各 scope 统计，跳过表头行。"""
     result = {}
-    for i, label in enumerate(_ROW_LABELS):
-        row = rows[2 + i] if (2 + i) < len(rows) else None
-        cells = row.find_all("td") if row else []
+    for row in rows:
+        cells = row.find_all("td")
+        if not cells:
+            continue
+        scope = _SCOPE_LABEL_MAP.get(cells[0].get_text(strip=True))
+        if scope is None:
+            continue
         for j, col in enumerate(_STAT_COLS):
             cell = cells[j + 1] if (j + 1) < len(cells) else None
-            result[f"{label}_{col}"] = cell.get_text(strip=True) if cell else ""
+            result[f"{scope}_{col}"] = cell.get_text(strip=True) if cell else ""
     return result
+
+
+def _parse_stats_table(table) -> dict:
+    """按标签提取排名表格，兼容表头行数不同的布局。"""
+    return _parse_stats_from_rows(table.find_all("tr"))
+
+
+def _split_stacked_standings(inner_table) -> list[tuple[str, list]]:
+    """将主客堆叠在同一 td 内的表格拆分为两方数据行。
+
+    欧战等跨联赛赛事的全场排名区只有 1 个 td，主客数据纵向堆叠：
+      [单格行] 队名分隔 → 之后的数据行属于该队
+    Returns: [('home', row_list), ('away', row_list)]
+    """
+    all_rows = inner_table.find_all("tr")
+    # 恰好只有 1 个 td 的行作为队名分隔行
+    dividers = [i for i, r in enumerate(all_rows) if len(r.find_all("td")) == 1]
+    sections = []
+    for idx, start in enumerate(dividers):
+        end = dividers[idx + 1] if idx + 1 < len(dividers) else len(all_rows)
+        sections.append(all_rows[start:end])
+    return list(zip(["home", "away"], sections))
 
 
 # ── 主解析 ───────────────────────────────────────────────────────────────────
@@ -157,15 +187,27 @@ def _parse_detail(html: str) -> dict:
 
     for period, outer_row in zip(["ft", "ht"], outer_rows):
         tds = outer_row.find_all("td", recursive=False)
-        if len(tds) < 2:
+        if not tds:
             continue
-        for side, td in zip(["home", "away"], tds):
-            inner_table = td.find("table")
+
+        if len(tds) >= 2:
+            # 标准布局：主/客各占一个 td（同联赛赛事常见）
+            for side, td in zip(["home", "away"], tds[:2]):
+                inner_table = td.find("table")
+                if not inner_table:
+                    continue
+                stats = _parse_stats_table(inner_table)
+                for k, v in stats.items():
+                    record[f"{side}_{period}_{k}"] = v
+        else:
+            # 堆叠布局：主/客数据纵向合并在单一 td 内（跨联赛赛事）
+            inner_table = tds[0].find("table")
             if not inner_table:
                 continue
-            stats = _parse_stats_table(inner_table)
-            for k, v in stats.items():
-                record[f"{side}_{period}_{k}"] = v
+            for side, rows in _split_stacked_standings(inner_table):
+                stats = _parse_stats_from_rows(rows)
+                for k, v in stats.items():
+                    record[f"{side}_{period}_{k}"] = v
 
     record["home_recent"] = _parse_match_array(html, "h_data")
     record["away_recent"] = _parse_match_array(html, "a_data")
@@ -217,14 +259,57 @@ def fetch_match_all(match_id: str | int, tracker=None) -> dict:
     with _t('standings', '保存联赛排名'):
         upsert_standings(conn, record)
 
+    if tracker:
+        _h_rank = record.get('home_ft_total_rank', '') or ''
+        _a_rank = record.get('away_ft_total_rank', '') or ''
+        _t_s = tracker.task('standings_rank', '主赛事球队排名').start()
+        if not _h_rank and not _a_rank:
+            _t_s.done('未获取到排名数据（源站未提供）')
+        else:
+            _parts = []
+            if _h_rank:
+                _parts.append(f'主队第 {_h_rank} 位')
+            if _a_rank:
+                _parts.append(f'客队第 {_a_rank} 位')
+            _t_s.done(' / '.join(_parts))
+
     with _t('recent', '保存近期比赛'):
         upsert_recent_matches(conn, record)
+
+    if tracker:
+        _all_recent = (record.get('home_recent') or []) + (record.get('away_recent') or [])
+        _total_r    = len(_all_recent)
+        _ranked_r   = sum(
+            1 for r in _all_recent
+            if r.get('home_rank') is not None or r.get('away_rank') is not None
+        )
+        _t_r = tracker.task('recent_rank', '近期赛事排名').start()
+        if _total_r == 0:
+            _t_r.done('无近期赛事数据')
+        elif _ranked_r == 0:
+            _t_r.done(f'共 {_total_r} 场，均无排名（源站未提供）')
+        else:
+            _t_r.done(f'{_ranked_r}/{_total_r} 场包含排名')
 
     with _t('h2h_parse', '解析交手记录'):
         h2h_records = _parse_match_array(html, "v_data", limit=20)
 
     with _t('h2h_save', f'保存交手记录 ({len(h2h_records)} 场)'):
         upsert_h2h_matches(conn, int(match_id), h2h_records)
+
+    if tracker:
+        _total_h    = len(h2h_records)
+        _ranked_h   = sum(
+            1 for r in h2h_records
+            if r.get('home_rank') is not None or r.get('away_rank') is not None
+        )
+        _t_h = tracker.task('h2h_rank', '交手记录排名').start()
+        if _total_h == 0:
+            _t_h.done('无交手记录数据')
+        elif _ranked_h == 0:
+            _t_h.done(f'共 {_total_h} 场，均无排名（源站未提供）')
+        else:
+            _t_h.done(f'{_ranked_h}/{_total_h} 场包含排名')
 
     match_time = record.get("match_time", "")
     try:
