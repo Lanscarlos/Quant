@@ -4,6 +4,8 @@
 External API:
   render() — registered with the Router, returns trigger(mid) callback
 """
+import subprocess
+
 from nicegui import ui
 
 from .formatters import fmt_display
@@ -46,6 +48,10 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
                 if on_refetch:
                     on_refetch(match['schedule_id'])
             ui.button('重新抓取', icon='refresh', on_click=_do_refetch).props('outline size=sm color=warning')
+            def _open_in_chrome():
+                url = f'https://zq.titan007.com/analysis/{match["schedule_id"]}sb.htm'
+                subprocess.Popen(['cmd', '/c', 'start', 'chrome', url])
+            ui.button('在浏览器查看', icon='open_in_browser', on_click=_open_in_chrome).props('outline size=sm color=primary')
             def _go_back():
                 if on_back:
                     on_back(source)
