@@ -57,6 +57,28 @@ def ensure_team(conn: sqlite3.Connection, team_id: int, name_cn: str) -> None:
         )
 
 
+def refresh_team_name(conn: sqlite3.Connection, team_id: int, name_cn: str) -> None:
+    """插入或刷新球队中文名。
+
+    与 ensure_team 不同，此函数在球队已存在时也会更新 team_name_cn，
+    适用于从 match_detail 页面取到权威队名的场景。
+    name_cn 为空时不覆盖已有值。
+    """
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO teams (team_id, team_name_cn) VALUES (?, ?)
+            ON CONFLICT(team_id) DO UPDATE SET
+                team_name_cn = CASE
+                    WHEN excluded.team_name_cn IS NOT NULL AND excluded.team_name_cn != ''
+                    THEN excluded.team_name_cn
+                    ELSE teams.team_name_cn
+                END
+            """,
+            (team_id, name_cn or None),
+        )
+
+
 def _int(val) -> int | None:
     try:
         return int(val)

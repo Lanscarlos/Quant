@@ -26,16 +26,9 @@ _STAT_COLS = ["played", "W", "D", "L", "GF", "GA", "GD", "pts", "rank", "win_rat
 
 
 def _parse_title_league(html: str) -> str:
-    """从 <title> 提取联赛中文名。
-
-    title 格式：'主队 VS 客队(YYYY-YYYY赛季{联赛名})-数据分析-...'
-    提取括号内内容并去掉赛季前缀，如 '2025-2026赛季欧冠杯' → '欧冠杯'。
-    """
-    m = re.search(r"<title>[^<]*?\((.+?)\)", html)
-    if not m:
-        return ""
-    raw = m.group(1).strip()
-    return re.sub(r"^\d{4}-\d{4}(赛季)?", "", raw).strip()
+    """从页面 .LName 锚点提取联赛中文名。"""
+    m = re.search(r"class='LName'[^>]*>([^<]+)<", html)
+    return m.group(1).strip() if m else ""
 _ROW_LABELS = ["total", "home", "away", "last6"]
 
 # 表格第一列文字 → scope 名，用于按标签定位数据行（免受表头行数影响）
@@ -361,7 +354,7 @@ def fetch_match_basics(match_id: str | int) -> dict | None:
         或 None（网络/解析失败）。
     """
     from src.db import get_conn
-    from src.db.repo.teams import ensure_team
+    from src.db.repo.teams import refresh_team_name
     from src.db.repo.matches import upsert_match_basics
 
     try:
@@ -381,8 +374,8 @@ def fetch_match_basics(match_id: str | int) -> dict | None:
     league_name  = _parse_title_league(html) or None
 
     conn = get_conn()
-    ensure_team(conn, htid, home_name)
-    ensure_team(conn, atid, away_name)
+    refresh_team_name(conn, htid, home_name)
+    refresh_team_name(conn, atid, away_name)
     upsert_match_basics(conn, sid, mt, htid, atid, league_name_cn=league_name)
 
     return {
