@@ -16,9 +16,11 @@ def _fmt_asian(home, handicap, away) -> str:
 
 def query_filtered(ids: list) -> list[dict]:
     """按筛选白名单 ID 查询赛事列表所需的表格数据。"""
+    print(f"[query_filtered] 查询 IDs={ids}")
     conn = get_conn()
     if ids:
         placeholders = ",".join("?" * len(ids))
+        print(f"[query_filtered] SQL IN = {list(ids)}")
         rows = conn.execute(f"""
             SELECT
                 m.schedule_id,
@@ -50,6 +52,7 @@ def query_filtered(ids: list) -> list[dict]:
             WHERE CAST(m.schedule_id AS TEXT) IN ({placeholders})
             ORDER BY m.match_time ASC
         """, (*ids,)).fetchall()
+        print(f"[query_filtered] DB 返回 {len(rows)} 行  schedule_ids={[r[0] for r in rows]}")
     else:
         rows = []
 

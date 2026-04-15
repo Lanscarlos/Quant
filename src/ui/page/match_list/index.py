@@ -39,7 +39,9 @@ def _diff_ids(new_ids: list, cached_ids: list) -> tuple[list, list]:
 
 def render(on_match_click: callable = None):
     cached_rows:  list = [[]]
-    filter_ids:   list = [get_filtered_match_ids()]
+    _init_ids = get_filtered_match_ids()
+    print(f"[match_list] 页面初始化 filter_ids = {_init_ids}")
+    filter_ids:   list = [_init_ids]
     is_loading:   list = [False]   # 仅首次加载时置 True，显示全屏占位 spinner
     is_fetching:  list = [False]   # 重入保护：任何网络抓取任务的并发锁
 
@@ -206,6 +208,7 @@ def render(on_match_click: callable = None):
                 run.io_bound(get_filtered_match_ids),
                 asyncio.sleep(random.uniform(0.1, 0.6)),
             )
+            print(f"[match_list] 刷新按钮: get_filtered_match_ids = {new_filter}")
             # 2) 白名单为空 → 提示用户先在 Chrome 筛选赛事
             if not new_filter:
                 ui.notify('请先在 Chrome 浏览器中筛选赛事，再点击刷新列表',
@@ -213,9 +216,13 @@ def render(on_match_click: callable = None):
                 return
             # 3) 差量：新增 ID 全量抓，老 ID 走 freshness 判断
             added, kept = _diff_ids(new_filter, filter_ids[0])
+            print(f"[match_list] diff: added={added}  kept={kept}  旧白名单={filter_ids[0]}")
             filter_ids[0] = new_filter
+            print(f"[match_list] filter_ids 更新为 {filter_ids[0]}")
             # 4) 按差量抓取（进度回调驱动增量渲染）
             await run.io_bound(hydrate_ids, added + kept, _progress_cb)
+            rows_after = query_filtered(filter_ids[0])
+            print(f"[match_list] 刷新后 query_filtered 返回 {len(rows_after)} 条  IDs={[r['id'] for r in rows_after]}")
             _reload()
         except Exception as exc:
             data_table.refresh()

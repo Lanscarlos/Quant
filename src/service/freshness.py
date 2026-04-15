@@ -48,16 +48,18 @@ def match_ids_needing_refresh(filter_ids: list[int]) -> list[int]:
     if not filter_ids:
         return []
 
-    placeholders = ",".join("?" * len(filter_ids))
+    # 统一转为 int，避免外部传入字符串时导致 key 类型不匹配
+    int_ids = [int(mid) for mid in filter_ids]
+    placeholders = ",".join("?" * len(int_ids))
     rows = get_conn().execute(
         f"SELECT schedule_id, status, fetched_at FROM matches"
         f" WHERE schedule_id IN ({placeholders})",
-        filter_ids,
+        int_ids,
     ).fetchall()
 
     found = {int(r[0]): (int(r[1]), r[2]) for r in rows}
     result = []
-    for mid in filter_ids:
+    for mid in int_ids:
         if mid not in found:
             result.append(mid)   # 库里没有 → 需抓
             continue
