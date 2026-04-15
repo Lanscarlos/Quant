@@ -37,6 +37,7 @@ def hydrate_ids(ids: list, on_progress=None) -> None:
 
     total = len(ids)
     stale_basics = set(match_ids_needing_refresh(ids))
+    print(f"[hydrate_ids] ids={ids}  stale_basics={stale_basics}")
     req_count = [0]  # 已发 HTTP 请求计数，用于决定是否插入间隔
 
     def _throttle() -> None:
@@ -73,8 +74,9 @@ def hydrate_ids(ids: list, on_progress=None) -> None:
             try:
                 basics = fetch_match_basics(mid)
                 match_time = basics.get('match_time') if basics else None
-            except Exception:
-                pass
+                print(f"[hydrate_ids] fetch_match_basics({mid}) -> {basics}")
+            except Exception as e:
+                print(f"[hydrate_ids] fetch_match_basics({mid}) 异常: {e}")
             _throttle()
             try:
                 fetch_live_score(mid, match_time)
