@@ -25,11 +25,17 @@ from src.service.euro_odds_history import fetch_euro_odds_history
 from src.service.asian_odds import fetch_asian_odds
 
 
-def hydrate_ids(ids: list) -> None:
-    """顺序抓取列表页所需数据，每次 HTTP 请求间随机间隔 2-5 秒。"""
+def hydrate_ids(ids: list, on_progress=None) -> None:
+    """顺序抓取列表页所需数据，每次 HTTP 请求间随机间隔 2-5 秒。
+
+    Args:
+        ids: 需处理的赛事 ID 列表。
+        on_progress: 可选回调 on_progress(done, total, mid)，每条赛事处理完后触发。
+    """
     if not ids:
         return
 
+    total = len(ids)
     stale_basics = set(match_ids_needing_refresh(ids))
     req_count = [0]  # 已发 HTTP 请求计数，用于决定是否插入间隔
 
@@ -39,7 +45,16 @@ def hydrate_ids(ids: list) -> None:
             time.sleep(random.uniform(2.0, 5.0))
         req_count[0] += 1
 
-    for mid in ids:
+    def _notify(done: int, mid: str) -> None:
+        """安全触发进度回调，异常不外溢。"""
+        if on_progress is None:
+            return
+        try:
+            on_progress(done, total, mid)
+        except Exception:
+            pass
+
+    for idx, mid in enumerate(ids, 1):
         mid_int = int(mid)
         needs_basics = mid_int in stale_basics
         needs_odds   = should_fetch_odds(mid_int)
@@ -48,6 +63,7 @@ def hydrate_ids(ids: list) -> None:
 
         # 四类数据全部新鲜 → 跳过本赛事，不发请求
         if not (needs_basics or needs_odds or needs_asian or needs_hist):
+            _notify(idx, mid)
             continue
 
         # 1) 基础信息 + 实时比分
@@ -97,6 +113,8 @@ def hydrate_ids(ids: list) -> None:
                 fetch_asian_odds(mid)
             except Exception:
                 pass
+
+        _notify(idx, mid)
 
 
 def _load_match_time(mid: int) -> str | None:
