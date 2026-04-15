@@ -33,9 +33,29 @@ def render():
             _fetch_trigger[0](mid)
 
     def _on_fetch_complete(mid):
-        router.navigate('conclusion')
-        if _conclusion_trigger[0]:
-            _conclusion_trigger[0](mid)
+        def _go_conclusion():
+            router.navigate('conclusion')
+            if _conclusion_trigger[0]:
+                _conclusion_trigger[0](mid)
+
+        # 用户仍在抓取页 → 沿用自动跳转，流程连贯
+        if router.current == 'fetch':
+            _go_conclusion()
+            return
+
+        # 用户已离开抓取页 → 不打扰，弹出持久 Toast，由用户决定何时查看
+        ui.notify(
+            f'赛事 {mid} 抓取完成',
+            type='positive',
+            position='top',
+            timeout=0,
+            close_button='关闭',
+            actions=[{
+                'label': '查看结论',
+                'color': 'white',
+                'handler': _go_conclusion,
+            }],
+        )
 
     def _on_history_match_click(mid):
         router.navigate('conclusion')
