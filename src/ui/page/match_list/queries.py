@@ -7,6 +7,13 @@ def _f(v) -> str:
     return f"{v:.2f}" if v is not None else '-'
 
 
+def _fmt_asian(home, handicap, away) -> str:
+    """亚盘格式化为 '主水 / 盘口 / 客水'，任一字段缺失则显示 '-'。"""
+    if handicap is None or home is None or away is None:
+        return '-'
+    return f"{home:.2f} / {handicap} / {away:.2f}"
+
+
 def query_filtered(ids: list) -> list[dict]:
     """按筛选白名单 ID 查询赛事列表所需的表格数据。"""
     conn = get_conn()
@@ -33,11 +40,13 @@ def query_filtered(ids: list) -> list[dict]:
                    AND change_time <= datetime(m.match_time, '-30 minutes')
                  ORDER BY change_time DESC LIMIT 1) AS h30_lose,
                 o.cur_win,   o.cur_draw,   o.cur_lose,
+                ao.cur_home, ao.cur_handicap, ao.cur_away,
                 m.home_score, m.away_score
             FROM matches m
-            LEFT JOIN teams   ht ON m.home_team_id = ht.team_id
-            LEFT JOIN teams   at ON m.away_team_id = at.team_id
-            LEFT JOIN odds_wh o  ON o.schedule_id  = m.schedule_id
+            LEFT JOIN teams           ht ON m.home_team_id = ht.team_id
+            LEFT JOIN teams           at ON m.away_team_id = at.team_id
+            LEFT JOIN odds_wh         o  ON o.schedule_id  = m.schedule_id
+            LEFT JOIN asian_odds_365  ao ON ao.schedule_id = m.schedule_id
             WHERE CAST(m.schedule_id AS TEXT) IN ({placeholders})
             ORDER BY m.match_time ASC
         """, (*ids,)).fetchall()
@@ -46,7 +55,7 @@ def query_filtered(ids: list) -> list[dict]:
 
     result = []
     for i, r in enumerate(rows, 1):
-        hs, as_ = r[14], r[15]
+        hs, as_ = r[17], r[18]
         score = f"{hs}:{as_}" if hs is not None and as_ is not None else '-'
         h30_str = f"{_f(r[8])} / {_f(r[9])} / {_f(r[10])}" if r[8] is not None else '-'
         result.append({
@@ -59,7 +68,7 @@ def query_filtered(ids: list) -> list[dict]:
             'open_odds': f"{_f(r[5])} / {_f(r[6])} / {_f(r[7])}",
             'h30_odds':  h30_str,
             'cur_odds':  f"{_f(r[11])} / {_f(r[12])} / {_f(r[13])}",
-            'asian':     '-',
+            'asian':     _fmt_asian(r[14], r[15], r[16]),
             'analysis':  '',
             'score':     score,
         })

@@ -139,18 +139,24 @@ def render(on_match_click: callable = None):
             return
         is_fetching[0] = True
         refresh_btn.props(add='loading disable')
+        err_label.set_text('')
         is_loading[0] = True
         data_table.refresh()
         try:
+            # 1) 重读 Chrome 筛选白名单
             filter_ids[0], _ = await asyncio.gather(
                 run.io_bound(get_filtered_match_ids),
                 asyncio.sleep(random.uniform(0.1, 0.6)),
             )
+            # 2) 按新白名单抓取缺失/过期赛事（内置限速）
+            await run.io_bound(hydrate_ids, filter_ids[0])
+            # 3) 刷新表格
             is_loading[0] = False
             _reload()
-        except Exception:
+        except Exception as exc:
             is_loading[0] = False
             data_table.refresh()
+            err_label.set_text(f'刷新失败：{exc}')
         finally:
             is_fetching[0] = False
             refresh_btn.props(remove='loading disable')
