@@ -14,12 +14,12 @@ from nicegui import ui, run
 
 from src.db.repo.history import (
     list_saved_matches, list_distinct_leagues, list_distinct_teams, backfill_h30,
-    export_to_json, export_to_csv,
+    export_to_json, export_to_csv, import_from_json,
 )
 
 from .constants import TABLE_COLS, ODDS_OPTIONS
 from .odds_panel import render_odds_panel
-from .dialogs import build_time_dialog, build_league_dialog, build_team_dialog, build_odds_dialog, build_export_dialog
+from .dialogs import build_time_dialog, build_league_dialog, build_team_dialog, build_odds_dialog, build_export_dialog, build_import_dialog
 
 
 def render(on_match_click: callable = None):
@@ -162,6 +162,7 @@ def render(on_match_click: callable = None):
             team_btn        = ui.button('按球队检索',    icon='group')        .props('outline size=sm')
             odds_btn        = ui.button('按赔率检索',    icon='filter_list')  .props('outline size=sm')
             export_data_btn = ui.button('导出数据',      icon='download')     .props('outline size=sm')
+            import_data_btn = ui.button('导入数据',      icon='upload')       .props('outline size=sm')
             export_img_btn  = ui.button('另存为图片',    icon='image')        .props('outline size=sm')
             print_btn       = ui.button('检索结果打印',  icon='print')        .props('outline size=sm')
             refresh_btn     = ui.button('刷新',          icon='refresh')      .props('outline size=sm')
@@ -316,6 +317,38 @@ def render(on_match_click: callable = None):
 
     export_dialog = build_export_dialog(on_confirm=_on_export)
 
+    async def _on_import(file_path: str):
+        """导入 JSON 数据：io_bound 读取文件 + 写入数据库后刷新列表."""
+        import_data_btn.props(add='loading disable')
+        try:
+            content = await run.io_bound(lambda: Path(file_path).read_text(encoding='utf-8'))
+            stats = await run.io_bound(import_from_json, content)
+            _reload()
+
+            msg = f"导入完成：成功 {stats['imported']} 条"
+            if stats['skipped']:
+                msg += f"，跳过 {stats['skipped']} 条"
+            if stats['errors']:
+                ui.notify(msg, type='warning')
+            else:
+                ui.notify(msg, type='positive')
+            if stats['errors']:
+                for err in stats['errors'][:3]:
+                    ui.notify(err, type='warning')
+
+        except ValueError as e:
+            ui.notify(f'文件验证失败：{e}', type='negative')
+        except FileNotFoundError:
+            ui.notify('文件不存在，请重新选择', type='negative')
+        except PermissionError:
+            ui.notify('无法读取该文件，请检查文件权限', type='negative')
+        except Exception as e:
+            ui.notify(f'导入失败：{e}', type='negative')
+        finally:
+            import_data_btn.props(remove='loading disable')
+
+    import_dialog = build_import_dialog(on_confirm=_on_import)
+
     # ── 对话框打开函数 ────────────────────────────────────────────────
 
     def _on_open_league_dialog():
@@ -361,6 +394,7 @@ def render(on_match_click: callable = None):
     team_btn.on_click(_on_open_team_dialog)
     odds_btn.on_click(odds_dialog.open)
     export_data_btn.on_click(export_dialog.open)
+    import_data_btn.on_click(import_dialog.open)
     export_img_btn.on_click(lambda: ui.notify('另存为图片功能待实现', type='info'))
     print_btn.on_click(lambda: ui.notify('打印功能待实现', type='info'))
     refresh_btn.on_click(_on_refresh)

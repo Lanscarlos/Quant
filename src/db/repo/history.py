@@ -406,3 +406,97 @@ def export_to_csv(filters: dict | None) -> str:
     writer.writerow(dict(zip(_CSV_FIELDS, _CSV_HEADERS)))
     writer.writerows(rows)
     return buf.getvalue()
+
+
+# saved_matches 中可导入的列（排除自增 id）
+_IMPORT_MATCH_COLS = [
+    'schedule_id', 'saved_at', 'match_time',
+    'home_team', 'away_team', 'league',
+    'home_rank', 'away_rank',
+    'home_score', 'away_score', 'home_half_score', 'away_half_score',
+    'wh_open_win', 'wh_open_draw', 'wh_open_lose',
+    'wh_h30_win', 'wh_h30_draw', 'wh_h30_lose',
+    'wh_cur_win', 'wh_cur_draw', 'wh_cur_lose',
+    'coral_open_win', 'coral_open_draw', 'coral_open_lose',
+    'coral_cur_win', 'coral_cur_draw', 'coral_cur_lose',
+    'asian_open_handicap', 'asian_open_home', 'asian_open_away',
+    'asian_cur_handicap', 'asian_cur_home', 'asian_cur_away',
+    'home_pts', 'away_pts',
+    'home_wdl_win', 'home_wdl_draw', 'home_wdl_loss',
+    'away_wdl_win', 'away_wdl_draw', 'away_wdl_loss',
+    'analysis_note', 'tags',
+]
+
+_SNAPSHOT_KEYS = ('match', 'extras', 'recent', 'h2h', 'odds', 'asian_odds')
+
+
+def import_from_json(content: str) -> dict:
+    """将 JSON 字符串导入到 history.db 的 saved_matches + saved_snapshots 中。
+
+    仅接受 export_to_json 生成的格式（version=1）。
+    已存在的相同 schedule_id 记录将被覆盖（INSERT OR REPLACE）。
+
+    返回：{'imported': int, 'skipped': int, 'errors': list[str]}
+    """
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"JSON 解析失败：{e}") from e
+
+    if payload.get('version') != 1:
+        raise ValueError(
+            f"不支持的文件版本（version={payload.get('version')}），仅支持 version=1"
+        )
+
+    records = payload.get('records')
+    if not isinstance(records, list):
+        raise ValueError("文件格式错误：缺少 records 字段")
+
+    hconn = get_history_conn()
+    cols_sql = ', '.join(_IMPORT_MATCH_COLS)
+    placeholders = ', '.join('?' * len(_IMPORT_MATCH_COLS))
+
+    imported = 0
+    skipped = 0
+    errors: list[str] = []
+
+    with hconn:
+        for rec in records:
+            sid = rec.get('schedule_id')
+            if not sid:
+                skipped += 1
+                errors.append(f"跳过一条缺少 schedule_id 的记录")
+                continue
+
+            try:
+                values = [rec.get(col) for col in _IMPORT_MATCH_COLS]
+                hconn.execute(
+                    f"INSERT OR REPLACE INTO saved_matches ({cols_sql}) VALUES ({placeholders})",
+                    values,
+                )
+
+                row = hconn.execute(
+                    "SELECT id FROM saved_matches WHERE schedule_id = ?", (sid,)
+                ).fetchone()
+                saved_id = row[0]
+
+                snapshot = rec.get('snapshot')
+                if snapshot and isinstance(snapshot, dict):
+                    json_vals = [
+                        json.dumps(snapshot.get(k), ensure_ascii=False) if snapshot.get(k) is not None else None
+                        for k in _SNAPSHOT_KEYS
+                    ]
+                    hconn.execute("""
+                        INSERT OR REPLACE INTO saved_snapshots (
+                            saved_match_id, match_json, extras_json,
+                            recent_json, h2h_json, odds_json, asian_odds_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, [saved_id] + json_vals)
+
+                imported += 1
+
+            except Exception as e:
+                skipped += 1
+                errors.append(f"赛事 {sid} 写入失败：{e}")
+
+    return {'imported': imported, 'skipped': skipped, 'errors': errors}

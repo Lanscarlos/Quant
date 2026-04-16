@@ -254,6 +254,94 @@ def build_export_dialog(on_confirm):
     return dialog
 
 
+def build_import_dialog(on_confirm):
+    """导入数据对话框.
+
+    on_confirm(file_path) — 用户点击导入后回调（可为 async def）.
+        file_path: str — 用户选择的 JSON 文件路径
+    返回 dialog.
+    """
+    preview_text: list[str] = ['']  # 文件预览信息
+
+    with ui.dialog() as dialog, ui.card().classes('w-[460px]'):
+        ui.label('导入数据').classes('text-base font-bold text-slate-700 mb-1')
+
+        # ── 文件选择 ──────────────────────────────────────────────────
+        with ui.column().classes('w-full gap-0.5 mt-2'):
+            ui.label('JSON 文件').classes('text-xs text-slate-400')
+            with ui.row().classes('w-full gap-2 items-center'):
+                path_input = ui.input(placeholder='请先点击浏览选择文件…') \
+                    .props('outlined dense readonly').classes('flex-1')
+                browse_btn = ui.button('浏览', icon='folder_open').props('outline size=sm')
+
+        # ── 文件预览 ──────────────────────────────────────────────────
+        preview_label = ui.label('').classes('text-xs text-slate-500 mt-1 min-h-[1.2em]')
+
+        # ── 提示信息 ──────────────────────────────────────────────────
+        ui.label('⚠ 已存在的相同赛事将被覆盖') \
+            .classes('text-xs font-medium text-amber-700 mt-2')
+
+        # ── 回调定义 ──────────────────────────────────────────────────
+
+        async def _on_browse():
+            def _open_dialog() -> str:
+                """在线程池中打开系统原生文件选择对话框."""
+                import tkinter as tk
+                from tkinter import filedialog
+                root = tk.Tk()
+                root.withdraw()
+                root.wm_attributes('-topmost', True)
+                path = filedialog.askopenfilename(
+                    parent=root,
+                    initialdir=str(Path.home() / 'Desktop'),
+                    filetypes=[('JSON 文件', '*.json'), ('所有文件', '*.*')],
+                )
+                root.destroy()
+                return path or ''
+
+            try:
+                path = await run.io_bound(_open_dialog)
+            except Exception as e:
+                ui.notify(f'文件对话框出错：{e}', type='negative')
+                return
+            if not path:
+                return
+
+            path_input.set_value(path)
+
+            # 读取文件顶层元信息生成预览
+            def _read_preview() -> str:
+                import json as _json
+                try:
+                    text = Path(path).read_text(encoding='utf-8')
+                    data = _json.loads(text)
+                    count = data.get('record_count', len(data.get('records', [])))
+                    exported_at = data.get('exported_at', '未知')
+                    return f'共 {count} 条记录，导出于 {exported_at}'
+                except Exception as ex:
+                    return f'无法读取文件预览：{ex}'
+
+            preview = await run.io_bound(_read_preview)
+            preview_label.set_text(preview)
+
+        browse_btn.on_click(_on_browse)
+
+        async def _on_confirm():
+            if not path_input.value:
+                ui.notify('请先点击浏览选择文件', type='warning')
+                return
+            dialog.close()
+            result = on_confirm(path_input.value)
+            if asyncio.iscoroutine(result):
+                await result
+
+        with ui.row().classes('w-full justify-end gap-2 mt-4'):
+            ui.button('取消', on_click=dialog.close).props('flat')
+            ui.button('导入', on_click=_on_confirm).props('unelevated color=primary')
+
+    return dialog
+
+
 def build_odds_dialog(on_apply):
     """按赔率检索对话框.
 
