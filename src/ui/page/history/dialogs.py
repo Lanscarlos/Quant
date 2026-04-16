@@ -190,10 +190,15 @@ def build_export_dialog(on_confirm):
 
         # ── 回调定义（在所有 UI 元素定义完后绑定，避免引用顺序问题） ──
 
+        def _default_path(ext: str) -> str:
+            """生成桌面默认保存路径（含当前时间戳）."""
+            ts = dt.datetime.now().strftime('%Y%m%d_%H%M%S')
+            return str(Path.home() / 'Desktop' / f'history_export_{ts}.{ext}')
+
         def _update_notice(fmt, clear_path=True):
-            """切换格式时更新说明提示，并可选清空已选路径（防止扩展名不匹配）."""
+            """切换格式时更新说明提示，并可选将路径更新为新扩展名的默认桌面路径."""
             if clear_path:
-                path_input.set_value('')
+                path_input.set_value(_default_path(fmt))
             if fmt == 'csv':
                 notice.set_text('⚠ 仅用于在 Excel / WPS 中查看，不支持导回应用')
                 notice.classes(remove='text-blue-700', add='text-amber-700')
@@ -255,7 +260,7 @@ def build_export_dialog(on_confirm):
             """每次打开对话框时重置所有组件状态."""
             scope_toggle.set_value('filtered')
             fmt_toggle.set_value('csv')
-            path_input.set_value('')
+            path_input.set_value(_default_path('csv'))  # 默认填入桌面路径
             _update_notice('csv', clear_path=False)
 
         dialog.on('show', _reset_export)
