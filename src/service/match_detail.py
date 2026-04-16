@@ -234,7 +234,7 @@ def fetch_match_all(match_id: str | int, tracker=None) -> dict:
     from contextlib import nullcontext
     from datetime import datetime
     from src.db import get_conn
-    from src.db.repo.teams import ensure_team
+    from src.db.repo.teams import refresh_team_name
     from src.db.repo.matches import ensure_match_stub, upsert_match_basics
     from src.db.repo.standings import upsert_standings
     from src.db.repo.recent_matches import upsert_recent_matches
@@ -259,8 +259,8 @@ def fetch_match_all(match_id: str | int, tracker=None) -> dict:
         atid = int(record.get('away_team_id') or 0)
         if not (sid and htid and atid):
             raise ValueError(f'页面缺少关键字段: schedule_id={sid}, home={htid}, away={atid}')
-        ensure_team(conn, htid, record.get('home_team', ''))
-        ensure_team(conn, atid, record.get('away_team', ''))
+        refresh_team_name(conn, htid, record.get('home_team', ''))
+        refresh_team_name(conn, atid, record.get('away_team', ''))
         # 用 upsert_match_basics 代替 ensure_match_stub，额外写入联赛名
         upsert_match_basics(
             conn, sid,
