@@ -3,8 +3,11 @@ Repository: saved_matches / saved_snapshots (history.db)
 
 Save, load, and list user-saved match analysis records.
 """
+import csv
+import io
 import json
 import sqlite3
+import datetime as dt
 
 from src.db import get_conn
 from src.db.history_connection import get_history_conn
@@ -177,6 +180,61 @@ _ODDS_COLS = frozenset({
     'coral_cur_win', 'coral_cur_draw', 'coral_cur_lose',
 })
 
+# CSV 导出用的列字段和中文表头
+_CSV_FIELDS = ['idx', 'match_time', 'home_team', 'away_team', 'league',
+               'open_odds', 'h30_odds', 'cur_odds', 'asian', 'analysis', 'score']
+_CSV_HEADERS = ['序号', '赛事时间', '主队', '客队', '联赛',
+                '初始赔率(威廉)', '赛前半小时赔率', '最终赔率',
+                '最终亚盘', '分析结论', '赛果']
+
+
+def _build_where_clause(filters: dict | None) -> tuple[str, list]:
+    """根据 filters 构建 SQL WHERE 子句和参数列表。
+
+    不处理 limit，调用方自行处理。
+    Returns:
+        (where_sql, params) — where_sql 为完整的 "WHERE ..." 或空串。
+    """
+    conditions: list[str] = []
+    params: list = []
+
+    if filters:
+        if 'time_from' in filters:
+            conditions.append("match_time >= ?")
+            params.append(filters['time_from'])
+        if 'time_to' in filters:
+            conditions.append("match_time <= ?")
+            params.append(filters['time_to'] + ' 23:59:59')
+        if 'league' in filters:
+            vals = filters['league']
+            ph = ','.join('?' * len(vals))
+            conditions.append(f"league IN ({ph})")
+            params.extend(vals)
+        if 'team' in filters:
+            vals = filters['team']
+            ph = ','.join('?' * len(vals))
+            role = filters.get('team_role', 'both')
+            if role == 'home':
+                conditions.append(f"home_team IN ({ph})")
+                params.extend(vals)
+            elif role == 'away':
+                conditions.append(f"away_team IN ({ph})")
+                params.extend(vals)
+            else:
+                conditions.append(f"(home_team IN ({ph}) OR away_team IN ({ph}))")
+                params.extend(vals + vals)
+        col = filters.get('odds_type')
+        if col and col in _ODDS_COLS:
+            if 'odds_min' in filters:
+                conditions.append(f"{col} >= ?")
+                params.append(filters['odds_min'])
+            if 'odds_max' in filters:
+                conditions.append(f"{col} <= ?")
+                params.append(filters['odds_max'])
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    return where, params
+
 
 def backfill_h30() -> int:
     """Backfill wh_h30_* columns for existing saved_matches rows that have NULL values.
@@ -253,45 +311,7 @@ def list_saved_matches(filters: dict | None = None) -> list[dict]:
       limit      — LIMIT n
     """
     hconn = get_history_conn()
-
-    conditions: list[str] = []
-    params: list = []
-
-    if filters:
-        if 'time_from' in filters:
-            conditions.append("match_time >= ?")
-            params.append(filters['time_from'])
-        if 'time_to' in filters:
-            conditions.append("match_time <= ?")
-            params.append(filters['time_to'] + ' 23:59:59')
-        if 'league' in filters:
-            vals = filters['league']
-            ph = ','.join('?' * len(vals))
-            conditions.append(f"league IN ({ph})")
-            params.extend(vals)
-        if 'team' in filters:
-            vals = filters['team']
-            ph = ','.join('?' * len(vals))
-            role = filters.get('team_role', 'both')
-            if role == 'home':
-                conditions.append(f"home_team IN ({ph})")
-                params.extend(vals)
-            elif role == 'away':
-                conditions.append(f"away_team IN ({ph})")
-                params.extend(vals)
-            else:
-                conditions.append(f"(home_team IN ({ph}) OR away_team IN ({ph}))")
-                params.extend(vals + vals)
-        col = filters.get('odds_type')
-        if col and col in _ODDS_COLS:
-            if 'odds_min' in filters:
-                conditions.append(f"{col} >= ?")
-                params.append(filters['odds_min'])
-            if 'odds_max' in filters:
-                conditions.append(f"{col} <= ?")
-                params.append(filters['odds_max'])
-
-    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    where, params = _build_where_clause(filters)
     limit = f"LIMIT {int(filters['limit'])}" if filters and 'limit' in filters else ""
 
     rows = hconn.execute(f"""
@@ -333,3 +353,56 @@ def list_saved_matches(filters: dict | None = None) -> list[dict]:
             'score':      score,
         })
     return result
+
+
+def export_to_json(filters: dict | None) -> str:
+    """将筛选后的 saved_matches + saved_snapshots 序列化为 JSON 字符串（UTF-8）。
+
+    用于数据完整迁移，包含所有原始字段和 JSON 快照。
+    """
+    hconn = get_history_conn()
+    where, params = _build_where_clause(filters)
+    rows = hconn.execute(f"""
+        SELECT m.*,
+               s.match_json, s.extras_json, s.recent_json,
+               s.h2h_json, s.odds_json, s.asian_odds_json
+        FROM saved_matches m
+        LEFT JOIN saved_snapshots s ON s.saved_match_id = m.id
+        {where}
+        ORDER BY m.saved_at DESC
+    """, params).fetchall()
+
+    records = []
+    for r in rows:
+        d = dict(r)
+        snapshot = {}
+        for key in ('match_json', 'extras_json', 'recent_json',
+                    'h2h_json', 'odds_json', 'asian_odds_json'):
+            raw = d.pop(key, None)
+            field = key.replace('_json', '')
+            snapshot[field] = json.loads(raw) if raw else None
+        d['snapshot'] = snapshot
+        records.append(d)
+
+    payload = {
+        'version':      1,
+        'app':          'Quant',
+        'exported_at':  dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'record_count': len(records),
+        'records':      records,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+
+
+def export_to_csv(filters: dict | None) -> str:
+    """将筛选后的数据序列化为 CSV 字符串（UTF-8-BOM，供 Excel/WPS 直接打开）。
+
+    复用 list_saved_matches 的格式化输出，仅包含可读的平铺字段。
+    """
+    rows = list_saved_matches(filters)
+    buf = io.StringIO()
+    buf.write('\ufeff')  # BOM，确保 Excel/WPS 正确识别 UTF-8
+    writer = csv.DictWriter(buf, fieldnames=_CSV_FIELDS, extrasaction='ignore')
+    writer.writerow(dict(zip(_CSV_FIELDS, _CSV_HEADERS)))
+    writer.writerows(rows)
+    return buf.getvalue()

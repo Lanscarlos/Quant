@@ -1,6 +1,10 @@
 """历史数据页 — 筛选对话框构建器."""
 
-from nicegui import ui
+import datetime as dt
+from pathlib import Path
+
+import webview
+from nicegui import app, ui
 
 from .constants import ODDS_OPTIONS
 
@@ -143,6 +147,95 @@ def build_team_dialog(team_avail, team_sel, team_search_query, on_toggle, on_app
             ui.button('应用', on_click=_on_apply).props('unelevated color=primary')
 
     return dialog, team_opts, search_input, role_toggle
+
+
+def build_export_dialog(on_confirm):
+    """导出数据对话框.
+
+    on_confirm(scope, fmt, save_path) — 用户点击导出后回调（普通 callable）.
+        scope:     'filtered' | 'all'
+        fmt:       'csv' | 'json'
+        save_path: str — 用户选择的保存路径
+    返回 dialog.
+    """
+    with ui.dialog() as dialog, ui.card().classes('w-[460px]'):
+        ui.label('导出数据').classes('text-base font-bold text-slate-700 mb-1')
+
+        # ── 导出范围 ──────────────────────────────────────────────────
+        with ui.column().classes('w-full gap-0.5 mt-2'):
+            ui.label('导出范围').classes('text-xs text-slate-400')
+            scope_toggle = ui.toggle(
+                {'filtered': '当前筛选结果', 'all': '全部数据'},
+                value='filtered',
+            ).props('size=sm')
+
+        # ── 导出格式 ──────────────────────────────────────────────────
+        with ui.column().classes('w-full gap-0.5 mt-3'):
+            ui.label('导出格式').classes('text-xs text-slate-400')
+            fmt_toggle = ui.toggle(
+                {'csv': 'CSV（查看用）', 'json': 'JSON（数据迁移）'},
+                value='csv',
+            ).props('size=sm')
+
+        # 格式说明（随格式切换联动）
+        notice = ui.label('').classes('text-xs font-medium mt-1')
+
+        # ── 保存位置 ──────────────────────────────────────────────────
+        with ui.column().classes('w-full gap-0.5 mt-3'):
+            ui.label('保存位置').classes('text-xs text-slate-400')
+            with ui.row().classes('w-full gap-2 items-center'):
+                path_input = ui.input(placeholder='请先点击浏览选择保存路径…') \
+                    .props('outlined dense readonly').classes('flex-1')
+                browse_btn = ui.button('浏览', icon='folder_open').props('outline size=sm')
+
+        # ── 回调定义（在所有 UI 元素定义完后绑定，避免引用顺序问题） ──
+
+        def _update_notice(fmt, clear_path=True):
+            """切换格式时更新说明提示，并可选清空已选路径（防止扩展名不匹配）."""
+            if clear_path:
+                path_input.set_value('')
+            if fmt == 'csv':
+                notice.set_text('⚠ 仅用于在 Excel / WPS 中查看，不支持导回应用')
+                notice.classes(remove='text-blue-700', add='text-amber-700')
+            else:
+                notice.set_text('ℹ 含完整快照数据，用于在另一台电脑上导入数据，不适合直接查看')
+                notice.classes(remove='text-amber-700', add='text-blue-700')
+
+        _update_notice('csv', clear_path=False)  # 初始提示，不清路径
+        fmt_toggle.on_value_change(lambda e: _update_notice(e.value))
+
+        async def _on_browse():
+            ext = 'json' if fmt_toggle.value == 'json' else 'csv'
+            file_types = ('JSON 文件 (*.json)',) if ext == 'json' else ('CSV 文件 (*.csv)',)
+            ts = dt.datetime.now().strftime('%Y%m%d_%H%M%S')
+            default_name = f'history_export_{ts}.{ext}'
+            try:
+                result = await app.native.main_window.create_file_dialog(
+                    webview.SAVE_DIALOG,
+                    directory=str(Path.home()),
+                    save_filename=default_name,
+                    file_types=file_types,
+                )
+            except Exception:
+                return
+            if result:
+                path = result[0] if isinstance(result, (tuple, list)) else result
+                path_input.set_value(path)
+
+        browse_btn.on_click(_on_browse)
+
+        def _on_confirm():
+            if not path_input.value:
+                ui.notify('请先点击浏览选择保存路径', type='warning')
+                return
+            dialog.close()
+            on_confirm(scope_toggle.value, fmt_toggle.value, path_input.value)
+
+        with ui.row().classes('w-full justify-end gap-2 mt-4'):
+            ui.button('取消', on_click=dialog.close).props('flat')
+            ui.button('导出', on_click=_on_confirm).props('unelevated color=primary')
+
+    return dialog
 
 
 def build_odds_dialog(on_apply):

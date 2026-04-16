@@ -8,14 +8,18 @@ External API:
 
 import asyncio
 import random
+from pathlib import Path
 
 from nicegui import ui, run
 
-from src.db.repo.history import list_saved_matches, list_distinct_leagues, list_distinct_teams, backfill_h30
+from src.db.repo.history import (
+    list_saved_matches, list_distinct_leagues, list_distinct_teams, backfill_h30,
+    export_to_json, export_to_csv,
+)
 
 from .constants import TABLE_COLS, ODDS_OPTIONS
 from .odds_panel import render_odds_panel
-from .dialogs import build_time_dialog, build_league_dialog, build_team_dialog, build_odds_dialog
+from .dialogs import build_time_dialog, build_league_dialog, build_team_dialog, build_odds_dialog, build_export_dialog
 
 
 def render(on_match_click: callable = None):
@@ -152,14 +156,15 @@ def render(on_match_click: callable = None):
             'w-full items-center gap-2 px-4 py-2 bg-slate-50 '
             'border-b border-slate-200 flex-wrap'
         ):
-            recent10_btn   = ui.button('近十场分析数据', icon='analytics')   .props('outline size=sm')
-            time_btn       = ui.button('按时间检索',    icon='access_time')  .props('outline size=sm')
-            league_btn     = ui.button('按联赛检索',    icon='emoji_events') .props('outline size=sm')
-            team_btn       = ui.button('按球队检索',    icon='group')        .props('outline size=sm')
-            odds_btn       = ui.button('按赔率检索',    icon='filter_list')  .props('outline size=sm')
-            export_img_btn = ui.button('另存为图片',    icon='image')        .props('outline size=sm')
-            print_btn      = ui.button('检索结果打印',  icon='print')        .props('outline size=sm')
-            refresh_btn    = ui.button('刷新',          icon='refresh')      .props('outline size=sm')
+            recent10_btn    = ui.button('近十场分析数据', icon='analytics')   .props('outline size=sm')
+            time_btn        = ui.button('按时间检索',    icon='access_time')  .props('outline size=sm')
+            league_btn      = ui.button('按联赛检索',    icon='emoji_events') .props('outline size=sm')
+            team_btn        = ui.button('按球队检索',    icon='group')        .props('outline size=sm')
+            odds_btn        = ui.button('按赔率检索',    icon='filter_list')  .props('outline size=sm')
+            export_data_btn = ui.button('导出数据',      icon='download')     .props('outline size=sm')
+            export_img_btn  = ui.button('另存为图片',    icon='image')        .props('outline size=sm')
+            print_btn       = ui.button('检索结果打印',  icon='print')        .props('outline size=sm')
+            refresh_btn     = ui.button('刷新',          icon='refresh')      .props('outline size=sm')
 
         # ── 筛选指示行 ────────────────────────────────────────────────
         @ui.refreshable
@@ -266,6 +271,33 @@ def render(on_match_click: callable = None):
                     for name in ('威廉体系', '立博体系'):
                         render_odds_panel(name)
 
+    async def _on_export(scope: str, fmt: str, save_path: str):
+        """导出数据：io_bound 序列化后写入用户已选路径."""
+        # ── 确定有效筛选条件 ─────────────────────────────────────────
+        if scope == 'all' or not active_filters[0]:
+            effective_filters = None
+        else:
+            # 剥离 limit 键，导出不受条数约束
+            effective_filters = {k: v for k, v in active_filters[0].items() if k != 'limit'}
+
+        # ── io_bound 序列化 + 写文件 ──────────────────────────────────
+        export_data_btn.props(add='loading disable')
+        try:
+            if fmt == 'json':
+                content = await run.io_bound(export_to_json, effective_filters)
+            else:
+                content = await run.io_bound(export_to_csv, effective_filters)
+
+            await run.io_bound(lambda: Path(save_path).write_text(content, encoding='utf-8'))
+            ui.notify(f'导出成功：{Path(save_path).name}', type='positive')
+
+        except PermissionError:
+            ui.notify('无法写入该路径，请检查文件权限', type='negative')
+        except Exception as e:
+            ui.notify(f'导出失败：{e}', type='negative')
+        finally:
+            export_data_btn.props(remove='loading disable')
+
     # ── 筛选对话框 ────────────────────────────────────────────────────
 
     time_dialog = build_time_dialog(on_apply=_apply_time_filter)
@@ -281,6 +313,10 @@ def render(on_match_click: callable = None):
     _refs['team_opts'] = _team_opts
 
     odds_dialog = build_odds_dialog(on_apply=_apply_odds_filter)
+
+    export_dialog = build_export_dialog(
+        on_confirm=lambda scope, fmt, save_path: asyncio.ensure_future(_on_export(scope, fmt, save_path))
+    )
 
     # ── 对话框打开函数 ────────────────────────────────────────────────
 
@@ -326,6 +362,7 @@ def render(on_match_click: callable = None):
     league_btn.on_click(_on_open_league_dialog)
     team_btn.on_click(_on_open_team_dialog)
     odds_btn.on_click(odds_dialog.open)
+    export_data_btn.on_click(export_dialog.open)
     export_img_btn.on_click(lambda: ui.notify('另存为图片功能待实现', type='info'))
     print_btn.on_click(lambda: ui.notify('打印功能待实现', type='info'))
     refresh_btn.on_click(_on_refresh)
