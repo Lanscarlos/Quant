@@ -317,17 +317,19 @@ def render(on_match_click: callable = None):
 
     export_dialog = build_export_dialog(on_confirm=_on_export)
 
-    async def _on_import(file_path: str):
+    async def _on_import(file_path: str, overwrite: bool = False):
         """导入 JSON 数据：io_bound 读取文件 + 写入数据库后刷新列表."""
         import_data_btn.props(add='loading disable')
         try:
             content = await run.io_bound(lambda: Path(file_path).read_text(encoding='utf-8'))
-            stats = await run.io_bound(import_from_json, content)
+            stats = await run.io_bound(import_from_json, content, overwrite)
             _reload()
 
             msg = f"导入完成：成功 {stats['imported']} 条"
+            if stats['existed']:
+                msg += f"，已存在跳过 {stats['existed']} 条"
             if stats['skipped']:
-                msg += f"，跳过 {stats['skipped']} 条"
+                msg += f"，异常跳过 {stats['skipped']} 条"
             if stats['errors']:
                 ui.notify(msg, type='warning')
             else:

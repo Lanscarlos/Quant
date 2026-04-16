@@ -251,18 +251,26 @@ def build_export_dialog(on_confirm):
             ui.button('取消', on_click=dialog.close).props('flat')
             ui.button('导出', on_click=_on_confirm).props('unelevated color=primary')
 
+        def _reset_export():
+            """每次打开对话框时重置所有组件状态."""
+            scope_toggle.set_value('filtered')
+            fmt_toggle.set_value('csv')
+            path_input.set_value('')
+            _update_notice('csv', clear_path=False)
+
+        dialog.on('show', _reset_export)
+
     return dialog
 
 
 def build_import_dialog(on_confirm):
     """导入数据对话框.
 
-    on_confirm(file_path) — 用户点击导入后回调（可为 async def）.
-        file_path: str — 用户选择的 JSON 文件路径
+    on_confirm(file_path, overwrite) — 用户点击导入后回调（可为 async def）.
+        file_path: str  — 用户选择的 JSON 文件路径
+        overwrite: bool — 是否覆盖已存在的同 schedule_id 记录
     返回 dialog.
     """
-    preview_text: list[str] = ['']  # 文件预览信息
-
     with ui.dialog() as dialog, ui.card().classes('w-[460px]'):
         ui.label('导入数据').classes('text-base font-bold text-slate-700 mb-1')
 
@@ -277,9 +285,15 @@ def build_import_dialog(on_confirm):
         # ── 文件预览 ──────────────────────────────────────────────────
         preview_label = ui.label('').classes('text-xs text-slate-500 mt-1 min-h-[1.2em]')
 
-        # ── 提示信息 ──────────────────────────────────────────────────
-        ui.label('⚠ 已存在的相同赛事将被覆盖') \
-            .classes('text-xs font-medium text-amber-700 mt-2')
+        # ── 导入选项 ──────────────────────────────────────────────────
+        overwrite_checkbox = ui.checkbox('覆盖已存在数据', value=False) \
+            .classes('mt-2 text-sm text-slate-700')
+        overwrite_notice = ui.label('⚠ 已存在的相同赛事将被覆盖') \
+            .classes('text-xs font-medium text-amber-700')
+        overwrite_notice.set_visibility(False)
+        overwrite_checkbox.on_value_change(
+            lambda e: overwrite_notice.set_visibility(e.value)
+        )
 
         # ── 回调定义 ──────────────────────────────────────────────────
 
@@ -331,13 +345,22 @@ def build_import_dialog(on_confirm):
                 ui.notify('请先点击浏览选择文件', type='warning')
                 return
             dialog.close()
-            result = on_confirm(path_input.value)
+            result = on_confirm(path_input.value, overwrite_checkbox.value)
             if asyncio.iscoroutine(result):
                 await result
 
         with ui.row().classes('w-full justify-end gap-2 mt-4'):
             ui.button('取消', on_click=dialog.close).props('flat')
             ui.button('导入', on_click=_on_confirm).props('unelevated color=primary')
+
+        def _reset_import():
+            """每次打开对话框时重置所有组件状态."""
+            path_input.set_value('')
+            preview_label.set_text('')
+            overwrite_checkbox.set_value(False)
+            overwrite_notice.set_visibility(False)
+
+        dialog.on('show', _reset_import)
 
     return dialog
 

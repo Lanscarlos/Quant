@@ -430,13 +430,17 @@ _IMPORT_MATCH_COLS = [
 _SNAPSHOT_KEYS = ('match', 'extras', 'recent', 'h2h', 'odds', 'asian_odds')
 
 
-def import_from_json(content: str) -> dict:
+def import_from_json(content: str, overwrite: bool = False) -> dict:
     """将 JSON 字符串导入到 history.db 的 saved_matches + saved_snapshots 中。
 
     仅接受 export_to_json 生成的格式（version=1）。
-    已存在的相同 schedule_id 记录将被覆盖（INSERT OR REPLACE）。
 
-    返回：{'imported': int, 'skipped': int, 'errors': list[str]}
+    Args:
+        content:   JSON 文件内容字符串。
+        overwrite: True 时覆盖已存在的同 schedule_id 记录；
+                   False（默认）时跳过已存在记录。
+
+    返回：{'imported': int, 'skipped': int, 'existed': int, 'errors': list[str]}
     """
     try:
         payload = json.loads(content)
@@ -455,9 +459,11 @@ def import_from_json(content: str) -> dict:
     hconn = get_history_conn()
     cols_sql = ', '.join(_IMPORT_MATCH_COLS)
     placeholders = ', '.join('?' * len(_IMPORT_MATCH_COLS))
+    conflict_clause = 'REPLACE' if overwrite else 'IGNORE'
 
     imported = 0
     skipped = 0
+    existed = 0
     errors: list[str] = []
 
     with hconn:
@@ -465,15 +471,20 @@ def import_from_json(content: str) -> dict:
             sid = rec.get('schedule_id')
             if not sid:
                 skipped += 1
-                errors.append(f"跳过一条缺少 schedule_id 的记录")
+                errors.append("跳过一条缺少 schedule_id 的记录")
                 continue
 
             try:
                 values = [rec.get(col) for col in _IMPORT_MATCH_COLS]
-                hconn.execute(
-                    f"INSERT OR REPLACE INTO saved_matches ({cols_sql}) VALUES ({placeholders})",
+                cur = hconn.execute(
+                    f"INSERT OR {conflict_clause} INTO saved_matches ({cols_sql}) VALUES ({placeholders})",
                     values,
                 )
+
+                # INSERT OR IGNORE 在已有记录时 rowcount=0，跳过快照写入
+                if cur.rowcount == 0:
+                    existed += 1
+                    continue
 
                 row = hconn.execute(
                     "SELECT id FROM saved_matches WHERE schedule_id = ?", (sid,)
@@ -499,4 +510,4 @@ def import_from_json(content: str) -> dict:
                 skipped += 1
                 errors.append(f"赛事 {sid} 写入失败：{e}")
 
-    return {'imported': imported, 'skipped': skipped, 'errors': errors}
+    return {'imported': imported, 'skipped': skipped, 'existed': existed, 'errors': errors}
