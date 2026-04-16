@@ -9,6 +9,16 @@ from nicegui import run, ui
 from .constants import ODDS_OPTIONS
 
 
+def _prettify_path(path: str) -> str:
+    """若路径位于桌面目录下，将前缀替换为 @桌面/ 以便展示；真实路径不受影响."""
+    try:
+        desktop = Path.home() / 'Desktop'
+        rel = Path(path).relative_to(desktop)
+        return '@桌面/' + rel.as_posix()
+    except ValueError:
+        return path
+
+
 def build_time_dialog(on_apply):
     """按时间检索对话框.
 
@@ -155,9 +165,12 @@ def build_export_dialog(on_confirm):
     on_confirm(scope, fmt, save_path) — 用户点击导出后回调（普通 callable）.
         scope:     'filtered' | 'all'
         fmt:       'csv' | 'json'
-        save_path: str — 用户选择的保存路径
+        save_path: str — 用户选择的保存路径（真实系统路径）
     返回 dialog.
     """
+    # 存储真实文件系统路径；path_input 展示时使用美化版本
+    _real_path: list = ['']
+
     with ui.dialog() as dialog, ui.card().classes('w-[460px]'):
         ui.label('导出数据').classes('text-base font-bold text-slate-700 mb-1')
 
@@ -195,10 +208,15 @@ def build_export_dialog(on_confirm):
             ts = dt.datetime.now().strftime('%Y%m%d_%H%M%S')
             return str(Path.home() / 'Desktop' / f'history_export_{ts}.{ext}')
 
+        def _set_path(real: str):
+            """同步更新真实路径和展示路径."""
+            _real_path[0] = real
+            path_input.set_value(_prettify_path(real) if real else '')
+
         def _update_notice(fmt, clear_path=True):
             """切换格式时更新说明提示，并可选将路径更新为新扩展名的默认桌面路径."""
             if clear_path:
-                path_input.set_value(_default_path(fmt))
+                _set_path(_default_path(fmt))
             if fmt == 'csv':
                 notice.set_text('⚠ 仅用于在 Excel / WPS 中查看，不支持导回应用')
                 notice.classes(remove='text-blue-700', add='text-amber-700')
@@ -238,16 +256,16 @@ def build_export_dialog(on_confirm):
                 ui.notify(f'文件对话框出错：{e}', type='negative')
                 return
             if path:
-                path_input.set_value(path)
+                _set_path(path)
 
         browse_btn.on_click(_on_browse)
 
         async def _on_confirm():
-            if not path_input.value:
+            if not _real_path[0]:
                 ui.notify('请先点击浏览选择保存路径', type='warning')
                 return
             dialog.close()
-            result = on_confirm(scope_toggle.value, fmt_toggle.value, path_input.value)
+            result = on_confirm(scope_toggle.value, fmt_toggle.value, _real_path[0])
             # 兼容 on_confirm 为协程函数（async def）的情况，确保在当前 client 上下文内 await
             if asyncio.iscoroutine(result):
                 await result
@@ -260,7 +278,7 @@ def build_export_dialog(on_confirm):
             """每次打开对话框时重置所有组件状态."""
             scope_toggle.set_value('filtered')
             fmt_toggle.set_value('csv')
-            path_input.set_value(_default_path('csv'))  # 默认填入桌面路径
+            _set_path(_default_path('csv'))  # 默认填入桌面路径（展示为 @桌面/…）
             _update_notice('csv', clear_path=False)
 
         dialog.on('show', _reset_export)
@@ -272,10 +290,13 @@ def build_import_dialog(on_confirm):
     """导入数据对话框.
 
     on_confirm(file_path, overwrite) — 用户点击导入后回调（可为 async def）.
-        file_path: str  — 用户选择的 JSON 文件路径
+        file_path: str  — 用户选择的 JSON 文件路径（真实系统路径）
         overwrite: bool — 是否覆盖已存在的同 schedule_id 记录
     返回 dialog.
     """
+    # 存储真实文件系统路径；path_input 展示时使用美化版本
+    _real_path: list = ['']
+
     with ui.dialog() as dialog, ui.card().classes('w-[460px]'):
         ui.label('导入数据').classes('text-base font-bold text-slate-700 mb-1')
 
@@ -326,7 +347,8 @@ def build_import_dialog(on_confirm):
             if not path:
                 return
 
-            path_input.set_value(path)
+            _real_path[0] = path
+            path_input.set_value(_prettify_path(path))
 
             # 读取文件顶层元信息生成预览
             def _read_preview() -> str:
@@ -346,11 +368,11 @@ def build_import_dialog(on_confirm):
         browse_btn.on_click(_on_browse)
 
         async def _on_confirm():
-            if not path_input.value:
+            if not _real_path[0]:
                 ui.notify('请先点击浏览选择文件', type='warning')
                 return
             dialog.close()
-            result = on_confirm(path_input.value, overwrite_checkbox.value)
+            result = on_confirm(_real_path[0], overwrite_checkbox.value)
             if asyncio.iscoroutine(result):
                 await result
 
@@ -360,6 +382,7 @@ def build_import_dialog(on_confirm):
 
         def _reset_import():
             """每次打开对话框时重置所有组件状态."""
+            _real_path[0] = ''
             path_input.set_value('')
             preview_label.set_text('')
             overwrite_checkbox.set_value(False)
