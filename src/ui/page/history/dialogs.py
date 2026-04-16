@@ -1,10 +1,10 @@
 """历史数据页 — 筛选对话框构建器."""
 
+import asyncio
 import datetime as dt
 from pathlib import Path
 
-import webview
-from nicegui import app, ui
+from nicegui import run, ui
 
 from .constants import ODDS_OPTIONS
 
@@ -206,30 +206,46 @@ def build_export_dialog(on_confirm):
 
         async def _on_browse():
             ext = 'json' if fmt_toggle.value == 'json' else 'csv'
-            file_types = ('JSON 文件 (*.json)',) if ext == 'json' else ('CSV 文件 (*.csv)',)
             ts = dt.datetime.now().strftime('%Y%m%d_%H%M%S')
             default_name = f'history_export_{ts}.{ext}'
-            try:
-                result = await app.native.main_window.create_file_dialog(
-                    webview.SAVE_DIALOG,
-                    directory=str(Path.home()),
-                    save_filename=default_name,
-                    file_types=file_types,
+
+            def _open_save_dialog() -> str:
+                """在线程池中打开系统原生保存对话框（避免阻塞事件循环）."""
+                import tkinter as tk
+                from tkinter import filedialog
+                root = tk.Tk()
+                root.withdraw()
+                root.wm_attributes('-topmost', True)  # 置顶，防止被遮挡
+                label_cn = 'JSON 文件' if ext == 'json' else 'CSV 文件'
+                path = filedialog.asksaveasfilename(
+                    parent=root,
+                    initialdir=str(Path.home() / 'Desktop'),
+                    initialfile=default_name,
+                    defaultextension=f'.{ext}',
+                    filetypes=[(label_cn, f'*.{ext}'), ('所有文件', '*.*')],
                 )
-            except Exception:
+                root.destroy()
+                return path or ''
+
+            try:
+                path = await run.io_bound(_open_save_dialog)
+            except Exception as e:
+                ui.notify(f'文件对话框出错：{e}', type='negative')
                 return
-            if result:
-                path = result[0] if isinstance(result, (tuple, list)) else result
+            if path:
                 path_input.set_value(path)
 
         browse_btn.on_click(_on_browse)
 
-        def _on_confirm():
+        async def _on_confirm():
             if not path_input.value:
                 ui.notify('请先点击浏览选择保存路径', type='warning')
                 return
             dialog.close()
-            on_confirm(scope_toggle.value, fmt_toggle.value, path_input.value)
+            result = on_confirm(scope_toggle.value, fmt_toggle.value, path_input.value)
+            # 兼容 on_confirm 为协程函数（async def）的情况，确保在当前 client 上下文内 await
+            if asyncio.iscoroutine(result):
+                await result
 
         with ui.row().classes('w-full justify-end gap-2 mt-4'):
             ui.button('取消', on_click=dialog.close).props('flat')

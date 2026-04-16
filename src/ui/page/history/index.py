@@ -314,9 +314,7 @@ def render(on_match_click: callable = None):
 
     odds_dialog = build_odds_dialog(on_apply=_apply_odds_filter)
 
-    export_dialog = build_export_dialog(
-        on_confirm=lambda scope, fmt, save_path: asyncio.ensure_future(_on_export(scope, fmt, save_path))
-    )
+    export_dialog = build_export_dialog(on_confirm=_on_export)
 
     # ── 对话框打开函数 ────────────────────────────────────────────────
 
