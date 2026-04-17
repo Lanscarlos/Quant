@@ -163,13 +163,15 @@ def load_snapshot(schedule_id: int) -> dict | None:
     """, (schedule_id,)).fetchone()
     if not row:
         return None
+    from src.ui.page.conclusion.queries import query_league_table
     return {
-        'match':      json.loads(row[0]) if row[0] else None,
-        'extras':     json.loads(row[1]) if row[1] else {},
-        'recent':     json.loads(row[2]) if row[2] else {'home': [], 'away': []},
-        'h2h':        json.loads(row[3]) if row[3] else {'rows': [], 'win': 0, 'draw': 0, 'loss': 0},
-        'odds':       json.loads(row[4]) if row[4] else {},
-        'asian_odds': json.loads(row[5]) if row[5] else None,
+        'match':        json.loads(row[0]) if row[0] else None,
+        'extras':       json.loads(row[1]) if row[1] else {},
+        'recent':       json.loads(row[2]) if row[2] else {'home': [], 'away': []},
+        'h2h':          json.loads(row[3]) if row[3] else {'rows': [], 'win': 0, 'draw': 0, 'loss': 0},
+        'odds':         json.loads(row[4]) if row[4] else {},
+        'asian_odds':   json.loads(row[5]) if row[5] else None,
+        'league_table': query_league_table(schedule_id),
     }
 
 

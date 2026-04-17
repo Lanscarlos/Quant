@@ -295,15 +295,32 @@ def query_all_sections(mid: int) -> dict:
     }
 
 
+def query_league_table(mid: int) -> dict:
+    """从 league_table_snapshot 读取赛前联赛积分榜（总/主/客场三榜）。
+
+    Returns:
+        {'total': [...], 'home': [...], 'away': [...]}
+        跨联赛/杯赛赛事时三个列表均为空。
+    """
+    from src.db.repo.league_table import load_league_table
+    conn = get_conn()
+    return {
+        'total': load_league_table(conn, mid, 'total'),
+        'home':  load_league_table(conn, mid, 'home'),
+        'away':  load_league_table(conn, mid, 'away'),
+    }
+
+
 def load_all_from_quant(mid: int) -> dict:
     """Load all conclusion data from quant.db into a unified data pack."""
     return {
-        'match':      query_match(mid),
-        'extras':     query_header_extras(mid),
-        'recent':     query_recent_matches(mid),
-        'h2h':        query_h2h(mid),
-        'odds':       query_odds(mid),
-        'asian_odds': query_asian_odds(mid),
+        'match':        query_match(mid),
+        'extras':       query_header_extras(mid),
+        'recent':       query_recent_matches(mid),
+        'h2h':          query_h2h(mid),
+        'odds':         query_odds(mid),
+        'asian_odds':   query_asian_odds(mid),
+        'league_table': query_league_table(mid),
     }
 
 

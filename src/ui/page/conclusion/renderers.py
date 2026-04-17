@@ -100,3 +100,56 @@ def render_asian_section(asian_row: dict | None):
             t.add_slot('body-cell-away', _dir_slot('away_dir'))
         else:
             no_data_hint()
+
+
+# zone_flag → Tailwind 背景色类（透明度低，不影响文字可读性）
+_ZONE_BG = {0: 'bg-blue-100', 1: 'bg-teal-100', 2: 'bg-stone-200'}
+
+
+def render_league_table_section(league_table: dict):
+    """渲染右侧联赛积分榜面板。
+
+    仅在 league_table['total'] 非空时渲染（联赛赛事）。
+    显示总/主/客三个分页，各队积分按位次排列，主客队高亮标注。
+    """
+    total = league_table.get('total') if league_table else []
+    if not total:
+        return
+
+    with ui.column().classes('w-full gap-1'):
+        ui.label('联赛积分榜').classes('text-xs font-semibold text-slate-600 pb-0.5')
+
+        with ui.tabs().props('dense').classes('w-full text-xs') as tabs:
+            ui.tab('total', label='总榜')
+            ui.tab('home',  label='主场')
+            ui.tab('away',  label='客场')
+
+        with ui.tab_panels(tabs, value='total').classes('w-full p-0'):
+            for scope_key in ('total', 'home', 'away'):
+                rows = league_table.get(scope_key) or []
+                with ui.tab_panel(scope_key).classes('p-0'):
+                    # 表头
+                    with ui.row().classes(
+                        'w-full items-center px-1 py-0.5 gap-0 text-xs '
+                        'font-semibold text-slate-400 border-b border-slate-200'
+                    ):
+                        ui.label('#').classes('w-5 text-right shrink-0')
+                        ui.label('球队').classes('flex-1 px-1')
+                        ui.label('积分').classes('w-8 text-right shrink-0')
+                    for r in rows:
+                        zone      = r.get('zone_flag', -1)
+                        zone_bg   = _ZONE_BG.get(zone, '')
+                        is_focus  = r.get('is_focus', 0)
+                        bold_cls  = 'font-bold text-slate-800' if is_focus else 'text-slate-600'
+                        rank_cls  = 'font-bold text-slate-700' if is_focus else 'text-slate-400'
+                        pts_str   = str(r['points']) if r['points'] is not None else '-'
+                        with ui.row().classes(
+                            f'w-full items-center px-1 py-px gap-0 text-xs {zone_bg}'
+                        ):
+                            ui.label(str(r['rank'])).classes(f'w-5 text-right shrink-0 {rank_cls}')
+                            name_lbl = ui.label(r['team_name']).classes(
+                                f'flex-1 px-1 truncate {bold_cls}'
+                            )
+                            if is_focus:
+                                name_lbl.tooltip('本场参赛队')
+                            ui.label(pts_str).classes(f'w-8 text-right shrink-0 {bold_cls}')

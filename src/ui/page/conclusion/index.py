@@ -10,7 +10,7 @@ from nicegui import ui
 
 from .formatters import fmt_display
 from .queries import load_all_from_quant
-from .renderers import render_asian_section, render_h2h_section, render_odds_section, render_recent_section, wdl_badges
+from .renderers import render_asian_section, render_h2h_section, render_league_table_section, render_odds_section, render_recent_section, wdl_badges
 
 
 def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live') -> None:
@@ -20,11 +20,12 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
         ui.label('未找到赛事数据').classes('text-sm text-slate-400')
         return
 
-    extras      = data['extras']
-    recent      = data['recent']
-    h2h         = data['h2h']
-    odds        = data['odds']
-    asian_odds  = data['asian_odds']
+    extras       = data['extras']
+    recent       = data['recent']
+    h2h          = data['h2h']
+    odds         = data['odds']
+    asian_odds   = data['asian_odds']
+    league_table = data.get('league_table') or {}
 
     with ui.column().classes('w-full gap-0'):
 
@@ -108,35 +109,47 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
 
         ui.separator().classes('my-2')
 
-        # ── 主客队各自近六场 ──────────────────────────────────────────
-        with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
-            render_recent_section(recent['home'], extras.get('home_wdl'), is_home=True,  border_right=True)
-            render_recent_section(recent['away'], extras.get('away_wdl'), is_home=False, border_right=False)
+        # ── 数据主区：左侧内容 + 右侧积分榜 ──────────────────────────
+        has_table = bool(league_table.get('total'))
+        with ui.row().classes('w-full gap-0 items-start'):
 
-        ui.separator().classes('my-2')
+            # 左侧主内容（自适应宽度）
+            with ui.column().classes('flex-1 gap-0 min-w-0'):
 
-        # ── 近六场交手 ────────────────────────────────────────────────
-        with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
-            render_h2h_section(h2h, fetched=True, border_right=False)
+                # ── 主客队各自近六场 ──────────────────────────────────
+                with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
+                    render_recent_section(recent['home'], extras.get('home_wdl'), is_home=True,  border_right=True)
+                    render_recent_section(recent['away'], extras.get('away_wdl'), is_home=False, border_right=False)
 
-        ui.separator().classes('my-2')
+                ui.separator().classes('my-2')
 
-        # ── 欧赔：威廉希尔 + 立博 + 365亚盘 ─────────────────────────────
-        with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
-            render_odds_section(odds, '威廉希尔', 'William Hill', border_right=True)
-            render_odds_section(odds, '立博', 'Ladbrokes', border_right=True)
-            render_asian_section(asian_odds)
+                # ── 近六场交手 ────────────────────────────────────────
+                with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
+                    render_h2h_section(h2h, fetched=True, border_right=False)
 
-        ui.separator().classes('my-2')
+                ui.separator().classes('my-2')
 
-        # ── 分析过程 & 结论 ───────────────────────────────────────────
-        with ui.row().classes('w-full gap-3 items-start'):
-            with ui.column().classes('flex-1 gap-1'):
-                ui.label('分析过程').classes('text-sm font-semibold text-slate-600')
-                ui.textarea().classes('w-full').props('outlined dense rows=6')
-            with ui.column().classes('flex-1 gap-1'):
-                ui.label('结论').classes('text-sm font-semibold text-slate-600')
-                ui.textarea().classes('w-full').props('outlined dense rows=6')
+                # ── 欧赔：威廉希尔 + 立博 + 365亚盘 ─────────────────
+                with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
+                    render_odds_section(odds, '威廉希尔', 'William Hill', border_right=True)
+                    render_odds_section(odds, '立博', 'Ladbrokes', border_right=True)
+                    render_asian_section(asian_odds)
+
+                ui.separator().classes('my-2')
+
+                # ── 分析过程 & 结论 ───────────────────────────────────
+                with ui.row().classes('w-full gap-3 items-start'):
+                    with ui.column().classes('flex-1 gap-1'):
+                        ui.label('分析过程').classes('text-sm font-semibold text-slate-600')
+                        ui.textarea().classes('w-full').props('outlined dense rows=6')
+                    with ui.column().classes('flex-1 gap-1'):
+                        ui.label('结论').classes('text-sm font-semibold text-slate-600')
+                        ui.textarea().classes('w-full').props('outlined dense rows=6')
+
+            # 右侧积分榜（仅联赛赛事显示）
+            if has_table:
+                with ui.column().classes('w-44 shrink-0 border-l border-slate-200 pl-2 gap-0'):
+                    render_league_table_section(league_table)
 
 
 def render(on_back: callable = None, on_refetch: callable = None):

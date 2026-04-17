@@ -282,7 +282,27 @@ _DDL = [
     """,
 
     # ------------------------------------------------------------------
-    # 11. asian_odds_365_history — Bet365 亚盘历史
+    # 11. league_table_snapshot — 赛前联赛积分榜快照
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS league_table_snapshot (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        schedule_id  INTEGER NOT NULL REFERENCES matches(schedule_id) ON DELETE CASCADE,
+        scope        TEXT    NOT NULL CHECK(scope IN ('total', 'home', 'away')),
+        rank         INTEGER NOT NULL,
+        team_id      INTEGER NOT NULL,
+        team_name    TEXT    NOT NULL,
+        points       INTEGER,
+        zone_flag    INTEGER NOT NULL DEFAULT -1,
+        is_focus     INTEGER NOT NULL DEFAULT 0,
+        fetched_at   TEXT    NOT NULL DEFAULT (datetime('now', '+8 hours')),
+        UNIQUE(schedule_id, scope, rank)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_league_table_match ON league_table_snapshot(schedule_id)",
+
+    # ------------------------------------------------------------------
+    # 12. asian_odds_365_history — Bet365 亚盘历史
     # ------------------------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS asian_odds_365_history (

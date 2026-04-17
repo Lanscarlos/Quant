@@ -24,6 +24,88 @@ _HEADERS = {
 
 _STAT_COLS = ["played", "W", "D", "L", "GF", "GA", "GD", "pts", "rank", "win_rate"]
 
+# ── 联赛积分榜解析 ────────────────────────────────────────────────────────────
+
+def _parse_js_array(html: str, var: str) -> list | None:
+    """提取页面内联 JS 数组变量（支持字符串/数字混合）。"""
+    m = re.search(rf"var {var}\s*=\s*(\[.*?\]);", html, re.DOTALL)
+    if not m:
+        return None
+    try:
+        return ast.literal_eval(m.group(1))
+    except (ValueError, SyntaxError):
+        return None
+
+
+def _parse_league_table(html: str, home_team_id: int, away_team_id: int) -> dict:
+    """解析赛前联赛积分榜 JS 数组，仅在 isShowIntegral == 1 时有数据。
+
+    Returns:
+        {
+          'league_table_total': [{'rank', 'team_id', 'team_name', 'points', 'zone_flag'}, ...],
+          'league_table_home':  [{'rank', 'team_id', 'team_name', 'points'}, ...],
+          'league_table_away':  [{'rank', 'team_id', 'team_name', 'points'}, ...],
+        }
+        三个列表均为空列表时代表该赛事无联赛积分榜（跨联赛赛事或数据缺失）。
+    """
+    result: dict = {
+        "league_table_total": [],
+        "league_table_home":  [],
+        "league_table_away":  [],
+    }
+
+    # 仅在 isShowIntegral == 1 时才有数据
+    m_flag = re.search(r"var isShowIntegral\s*=\s*(\d+)", html)
+    if not m_flag or m_flag.group(1) != "1":
+        return result
+
+    # ── 总榜：[zone_flag, rank, team_id, team_name, points] ──────────────
+    total_raw = _parse_js_array(html, "totalScoreStr")
+    if total_raw:
+        for row in total_raw:
+            if len(row) < 5:
+                continue
+            try:
+                zone_flag = int(row[0])
+                rank      = int(row[1])
+                team_id   = int(row[2])
+                team_name = str(row[3])
+                points    = int(row[4]) if row[4] != "" else None
+            except (ValueError, TypeError):
+                continue
+            result["league_table_total"].append({
+                "zone_flag": zone_flag,
+                "rank":      rank,
+                "team_id":   team_id,
+                "team_name": team_name,
+                "points":    points,
+            })
+
+    # ── 主/客场榜：[rank, team_id, team_name, points] ────────────────────
+    for key, var in [("league_table_home", "homeScoreStr"),
+                     ("league_table_away", "guestScoreStr")]:
+        raw = _parse_js_array(html, var)
+        if not raw:
+            continue
+        for row in raw:
+            if len(row) < 4:
+                continue
+            try:
+                rank      = int(row[0])
+                team_id   = int(row[1])
+                team_name = str(row[2])
+                points    = int(row[3]) if row[3] != "" else None
+            except (ValueError, TypeError):
+                continue
+            result[key].append({
+                "rank":      rank,
+                "team_id":   team_id,
+                "team_name": team_name,
+                "points":    points,
+            })
+
+    return result
+
 
 def _parse_title_league(html: str) -> str:
     """从页面 .LName 锚点提取联赛中文名。"""
@@ -219,6 +301,12 @@ def _parse_detail(html: str) -> dict:
     record["home_recent"] = _parse_match_array(html, "h_data")
     record["away_recent"] = _parse_match_array(html, "a_data")
 
+    # ── 赛前联赛积分榜（仅联赛赛事有数据）──────────────────────────────────
+    htid = int(record.get("home_team_id") or 0)
+    atid = int(record.get("away_team_id") or 0)
+    lt   = _parse_league_table(html, htid, atid)
+    record.update(lt)
+
     return record
 
 
@@ -239,6 +327,7 @@ def fetch_match_all(match_id: str | int, tracker=None) -> dict:
     from src.db.repo.standings import upsert_standings
     from src.db.repo.recent_matches import upsert_recent_matches
     from src.db.repo.h2h_matches import upsert_h2h_matches
+    from src.db.repo.league_table import upsert_league_table
 
     def _t(key: str, label: str):
         return tracker.task(key, label) if tracker else nullcontext()
@@ -271,6 +360,15 @@ def fetch_match_all(match_id: str | int, tracker=None) -> dict:
 
     with _t('standings', '保存联赛排名'):
         upsert_standings(conn, record)
+
+    with _t('league_table', '保存赛前积分榜'):
+        lt_rows = upsert_league_table(conn, record)
+    if tracker:
+        _t_lt = tracker.task('league_table_rows', '积分榜行数').start()
+        if lt_rows == 0:
+            _t_lt.done('无积分榜数据（跨联赛或数据缺失）')
+        else:
+            _t_lt.done(f'共写入 {lt_rows} 行（总/主/客场榜）')
 
     if tracker:
         _h_rank = record.get('home_ft_total_rank', '') or ''
