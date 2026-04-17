@@ -64,9 +64,10 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
                     on_back(source)
             ui.button('返回', on_click=_go_back).props('outline size=sm color=negative')
             if has_table:
+                ui.element('div').classes('flex-1')
                 btn_collapse = ui.button('收起积分榜', icon='chevron_right', on_click=_toggle_table).props('outline size=sm')
                 btn_collapse.bind_visibility_from(table_vis, 'open')
-                btn_expand = ui.button('积分榜', icon='chevron_left', on_click=_toggle_table).props('outline size=sm')
+                btn_expand = ui.button('展开积分榜', icon='chevron_left', on_click=_toggle_table).props('outline size=sm')
                 btn_expand.bind_visibility_from(table_vis, 'open', backward=lambda v: not v)
 
         ui.separator().classes('mb-2')
