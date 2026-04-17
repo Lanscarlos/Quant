@@ -117,39 +117,39 @@ def render_league_table_section(league_table: dict):
         return
 
     with ui.column().classes('w-full gap-1'):
-        ui.label('联赛积分榜').classes('text-xs font-semibold text-slate-600 pb-0.5')
+        with ui.row().classes('w-full items-center gap-1 pb-0.5'):
+            ui.label('联赛积分榜').classes('text-xs font-semibold text-slate-600 flex-1')
+            sel = ui.select(
+                {'total': '总榜', 'home': '主场', 'away': '客场'},
+                value='total',
+            ).classes('text-xs').props('dense borderless options-dense')
 
-        with ui.tabs().props('dense').classes('w-full text-xs') as tabs:
-            ui.tab('total', label='总榜')
-            ui.tab('home',  label='主场')
-            ui.tab('away',  label='客场')
+        with ui.row().classes(
+            'w-full items-center px-1 py-0.5 gap-0 text-xs '
+            'font-semibold text-slate-400 border-b border-slate-200'
+        ):
+            ui.label('#').classes('w-5 text-right shrink-0')
+            ui.label('球队').classes('flex-1 px-1')
+            ui.label('积分').classes('w-8 text-right shrink-0')
 
-        with ui.tab_panels(tabs, value='total').classes('w-full p-0'):
-            for scope_key in ('total', 'home', 'away'):
-                rows = league_table.get(scope_key) or []
-                with ui.tab_panel(scope_key).classes('p-0'):
-                    # 表头
+        for scope_key in ('total', 'home', 'away'):
+            rows = league_table.get(scope_key) or []
+            with ui.column().classes('w-full gap-0') as scope_col:
+                scope_col.bind_visibility_from(sel, 'value', backward=lambda v, k=scope_key: v == k)
+                for r in rows:
+                    zone      = r.get('zone_flag', -1)
+                    zone_bg   = _ZONE_BG.get(zone, '')
+                    is_focus  = r.get('is_focus', 0)
+                    bold_cls  = 'font-bold text-slate-800' if is_focus else 'text-slate-600'
+                    rank_cls  = 'font-bold text-slate-700' if is_focus else 'text-slate-400'
+                    pts_str   = str(r['points']) if r['points'] is not None else '-'
                     with ui.row().classes(
-                        'w-full items-center px-1 py-0.5 gap-0 text-xs '
-                        'font-semibold text-slate-400 border-b border-slate-200'
+                        f'w-full items-center px-1 py-px gap-0 text-xs {zone_bg}'
                     ):
-                        ui.label('#').classes('w-5 text-right shrink-0')
-                        ui.label('球队').classes('flex-1 px-1')
-                        ui.label('积分').classes('w-8 text-right shrink-0')
-                    for r in rows:
-                        zone      = r.get('zone_flag', -1)
-                        zone_bg   = _ZONE_BG.get(zone, '')
-                        is_focus  = r.get('is_focus', 0)
-                        bold_cls  = 'font-bold text-slate-800' if is_focus else 'text-slate-600'
-                        rank_cls  = 'font-bold text-slate-700' if is_focus else 'text-slate-400'
-                        pts_str   = str(r['points']) if r['points'] is not None else '-'
-                        with ui.row().classes(
-                            f'w-full items-center px-1 py-px gap-0 text-xs {zone_bg}'
-                        ):
-                            ui.label(str(r['rank'])).classes(f'w-5 text-right shrink-0 {rank_cls}')
-                            name_lbl = ui.label(r['team_name']).classes(
-                                f'flex-1 px-1 truncate {bold_cls}'
-                            )
-                            if is_focus:
-                                name_lbl.tooltip('本场参赛队')
-                            ui.label(pts_str).classes(f'w-8 text-right shrink-0 {bold_cls}')
+                        ui.label(str(r['rank'])).classes(f'w-5 text-right shrink-0 {rank_cls}')
+                        name_lbl = ui.label(r['team_name']).classes(
+                            f'flex-1 px-1 truncate {bold_cls}'
+                        )
+                        if is_focus:
+                            name_lbl.tooltip('本场参赛队')
+                        ui.label(pts_str).classes(f'w-8 text-right shrink-0 {bold_cls}')

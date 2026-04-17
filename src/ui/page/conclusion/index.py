@@ -13,7 +13,7 @@ from .queries import load_all_from_quant
 from .renderers import render_asian_section, render_h2h_section, render_league_table_section, render_odds_section, render_recent_section, wdl_badges
 
 
-def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live') -> None:
+def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live', table_vis: dict | None = None) -> None:
     """渲染结论主体内容。data 是 load_all_from_quant / load_snapshot 返回的统一数据包。"""
     match = data['match']
     if not match:
@@ -26,6 +26,12 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
     odds         = data['odds']
     asian_odds   = data['asian_odds']
     league_table = data.get('league_table') or {}
+    has_table    = bool(league_table.get('total'))
+    if table_vis is None:
+        table_vis = {'open': True}
+
+    def _toggle_table():
+        table_vis['open'] = not table_vis['open']
 
     with ui.column().classes('w-full gap-0'):
 
@@ -57,64 +63,68 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
                 if on_back:
                     on_back(source)
             ui.button('返回', on_click=_go_back).props('outline size=sm color=negative')
+            if has_table:
+                btn_collapse = ui.button('收起积分榜', icon='chevron_right', on_click=_toggle_table).props('outline size=sm')
+                btn_collapse.bind_visibility_from(table_vis, 'open')
+                btn_expand = ui.button('积分榜', icon='chevron_left', on_click=_toggle_table).props('outline size=sm')
+                btn_expand.bind_visibility_from(table_vis, 'open', backward=lambda v: not v)
 
         ui.separator().classes('mb-2')
 
-        # ── 赛事头部 ──────────────────────────────────────────────────
-        with ui.row().classes('w-full items-center py-2 gap-2'):
-
-            # 联赛名称（最左侧）
-            ui.label(match['league']).classes('text-xs text-slate-500 self-center w-20 shrink-0')
-
-            # 主队（靠中间右对齐）
-            with ui.column().classes('flex-1 items-end gap-0'):
-                with ui.row().classes('items-baseline gap-1 justify-end'):
-                    if match['home_rank'] is not None:
-                        ui.label(str(match['home_rank'])).classes('text-sm text-slate-400')
-                    ui.label(match['home_team']).classes('text-lg font-bold text-blue-700')
-                with ui.row().classes('items-center gap-3'):
-                    with ui.row().classes('items-center gap-1'):
-                        ui.label('积分').classes('text-xs text-slate-400')
-                        ui.label(fmt_display(extras.get('home_pts'))).classes('text-xs font-bold text-slate-600')
-                    if extras.get('home_wdl'):
-                        wdl_badges(*extras['home_wdl'])
-
-            # 比分 / 时间
-            with ui.column().classes('px-4 items-center gap-0 flex-shrink-0'):
-                hs, as_ = match['home_score'], match['away_score']
-                if hs is not None:
-                    ui.label(f'{hs}  :  {as_}').classes('text-2xl font-bold text-slate-800')
-                    hhs, ahs = match['home_half_score'], match['away_half_score']
-                    if hhs is not None:
-                        ui.label(f'半场 {hhs}:{ahs}').classes('text-xs text-slate-400')
-                else:
-                    ui.label('VS').classes('text-2xl font-bold text-slate-300')
-                ui.label(match['match_time'] or '').classes('text-xs text-slate-400 mt-1')
-
-            # 客队（靠中间左对齐）
-            with ui.column().classes('flex-1 items-start gap-0'):
-                with ui.row().classes('items-baseline gap-1'):
-                    if match['away_rank'] is not None:
-                        ui.label(str(match['away_rank'])).classes('text-sm text-slate-400')
-                    ui.label(match['away_team']).classes('text-lg font-bold text-red-600')
-                with ui.row().classes('items-center gap-3'):
-                    if extras.get('away_wdl'):
-                        wdl_badges(*extras['away_wdl'])
-                    with ui.row().classes('items-center gap-1'):
-                        ui.label('积分').classes('text-xs text-slate-400')
-                        ui.label(fmt_display(extras.get('away_pts'))).classes('text-xs font-bold text-slate-600')
-
-            # 右侧占位，平衡左边联赛标签宽度，保持整体居中
-            ui.element('div').classes('w-20 shrink-0')
-
-        ui.separator().classes('my-2')
-
-        # ── 数据主区：左侧内容 + 右侧积分榜 ──────────────────────────
-        has_table = bool(league_table.get('total'))
+        # ── 主区：左侧（头部+数据）+ 右侧积分榜（从主客队头部起对齐）──
         with ui.row().classes('w-full gap-0 items-start'):
 
-            # 左侧主内容（自适应宽度）
+            # 左侧：赛事头部 + 数据内容
             with ui.column().classes('flex-1 gap-0 min-w-0'):
+
+                # ── 赛事头部 ──────────────────────────────────────────
+                with ui.row().classes('w-full items-center py-2 gap-2'):
+
+                    # 联赛名称（最左侧）
+                    ui.label(match['league']).classes('text-xs text-slate-500 self-center w-20 shrink-0')
+
+                    # 主队（靠中间右对齐）
+                    with ui.column().classes('flex-1 items-end gap-0'):
+                        with ui.row().classes('items-baseline gap-1 justify-end'):
+                            if match['home_rank'] is not None:
+                                ui.label(str(match['home_rank'])).classes('text-sm text-slate-400')
+                            ui.label(match['home_team']).classes('text-lg font-bold text-blue-700')
+                        with ui.row().classes('items-center gap-3'):
+                            with ui.row().classes('items-center gap-1'):
+                                ui.label('积分').classes('text-xs text-slate-400')
+                                ui.label(fmt_display(extras.get('home_pts'))).classes('text-xs font-bold text-slate-600')
+                            if extras.get('home_wdl'):
+                                wdl_badges(*extras['home_wdl'])
+
+                    # 比分 / 时间
+                    with ui.column().classes('px-4 items-center gap-0 flex-shrink-0'):
+                        hs, as_ = match['home_score'], match['away_score']
+                        if hs is not None:
+                            ui.label(f'{hs}  :  {as_}').classes('text-2xl font-bold text-slate-800')
+                            hhs, ahs = match['home_half_score'], match['away_half_score']
+                            if hhs is not None:
+                                ui.label(f'半场 {hhs}:{ahs}').classes('text-xs text-slate-400')
+                        else:
+                            ui.label('VS').classes('text-2xl font-bold text-slate-300')
+                        ui.label(match['match_time'] or '').classes('text-xs text-slate-400 mt-1')
+
+                    # 客队（靠中间左对齐）
+                    with ui.column().classes('flex-1 items-start gap-0'):
+                        with ui.row().classes('items-baseline gap-1'):
+                            if match['away_rank'] is not None:
+                                ui.label(str(match['away_rank'])).classes('text-sm text-slate-400')
+                            ui.label(match['away_team']).classes('text-lg font-bold text-red-600')
+                        with ui.row().classes('items-center gap-3'):
+                            if extras.get('away_wdl'):
+                                wdl_badges(*extras['away_wdl'])
+                            with ui.row().classes('items-center gap-1'):
+                                ui.label('积分').classes('text-xs text-slate-400')
+                                ui.label(fmt_display(extras.get('away_pts'))).classes('text-xs font-bold text-slate-600')
+
+                    # 右侧占位，平衡左边联赛标签宽度，保持整体居中
+                    ui.element('div').classes('w-20 shrink-0')
+
+                ui.separator().classes('my-2')
 
                 # ── 主客队各自近六场 ──────────────────────────────────
                 with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
@@ -146,14 +156,16 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
                         ui.label('结论').classes('text-sm font-semibold text-slate-600')
                         ui.textarea().classes('w-full').props('outlined dense rows=6')
 
-            # 右侧积分榜（仅联赛赛事显示）
+            # 右侧积分榜（与主客队头部顶部对齐，可收起）
             if has_table:
-                with ui.column().classes('w-44 shrink-0 border-l border-slate-200 pl-2 gap-0'):
+                with ui.column().classes('w-44 shrink-0 border-l border-slate-200 pl-2 gap-0') as standings_col:
+                    standings_col.bind_visibility_from(table_vis, 'open')
                     render_league_table_section(league_table)
 
 
 def render(on_back: callable = None, on_refetch: callable = None):
-    state = {'mid': None, 'source': 'live'}
+    state     = {'mid': None, 'source': 'live'}
+    table_vis = {'open': True}
 
     # ── 布局 ──────────────────────────────────────────────────────────────────
     with ui.scroll_area().classes('w-full h-full'):
@@ -179,7 +191,7 @@ def render(on_back: callable = None, on_refetch: callable = None):
                     ui.label('未找到赛事数据').classes('text-sm text-slate-400')
                     return
 
-                _render_body(data, on_back=on_back, on_refetch=on_refetch, source=state['source'])
+                _render_body(data, on_back=on_back, on_refetch=on_refetch, source=state['source'], table_vis=table_vis)
 
             conclusion_body()
 
@@ -187,8 +199,9 @@ def render(on_back: callable = None, on_refetch: callable = None):
 
     def trigger(mid: int | str, source: str = 'live') -> None:
         """设置 mid 并刷新结论。source='live' 从 quant.db 读，'history' 从 history.db 读。"""
-        state['mid'] = int(mid)
-        state['source'] = source
+        state['mid']      = int(mid)
+        state['source']   = source
+        table_vis['open'] = True
         conclusion_body.refresh()
 
     return trigger
