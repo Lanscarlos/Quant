@@ -33,7 +33,7 @@ Both opened as WAL + FK ON, `row_factory=sqlite3.Row`, frozen-aware path resolut
 | Live | `data/quant.db` | All scraped data | `src/db/connection.py` + `schema.py` |
 | History | `data/history.db` | User-saved analysis snapshots | `src/db/history_connection.py` + `history_schema.py` |
 
-`quant.db` tables (12): dimension `leagues`, `teams`, `companies`; match `matches`, `match_standings` (16 rows/match = 2 sides × 2 periods × 4 scopes), `match_recent`, `match_h2h`; odds `odds_wh` / `odds_wh_history` (WH, company 115), `odds_coral` / `odds_coral_history` (Ladbrokes, company 82), `asian_odds_365` / `asian_odds_365_history` (Bet365).
+`quant.db` tables (14): dimension `leagues`, `teams`, `companies`; match `matches`, `match_standings` (16 rows/match = 2 sides × 2 periods × 4 scopes), `match_recent`, `match_h2h`, `league_table_snapshot` (pre-match league table, only for isShowIntegral=1 leagues); odds `odds_wh` / `odds_wh_history` (WH, company 115), `odds_coral` / `odds_coral_history` (Ladbrokes, company 82), `asian_odds_365` / `asian_odds_365_history` (Bet365).
 
 `history.db` tables: `saved_matches` (denormalized flat row for list/filter) + `saved_snapshots` (JSON blobs keyed by `saved_match_id` with ON DELETE CASCADE). Schema has inline `_migrate()` adding `wh_h30_*` columns.
 
@@ -71,13 +71,15 @@ Self-contained fetch+parse+upsert pipelines, one per data source:
 | Module | URL | Encoding | Writes |
 |--------|-----|----------|--------|
 | `match_list.py` | `bf.titan007.com/VbsXml/bfdata.js` | GBK | `leagues`, `teams`, `matches` |
-| `match_detail.py` | `zq.titan007.com/analysis/{mid}sb.htm` | UTF-8 | `match_standings`, `match_recent`, `match_h2h` |
+| `match_detail.py` | `zq.titan007.com/analysis/{mid}sb.htm` | UTF-8 | `match_standings`, `match_recent`, `match_h2h`, `league_table_snapshot` |
 | `euro_odds.py` | `1x2d.titan007.com/{mid}.js` | UTF-8 | `odds_wh`, `odds_coral` |
 | `euro_odds_history.py` | `1x2.titan007.com/OddsHistory.aspx?...` | UTF-8 | `odds_wh_history`, `odds_coral_history` |
 | `asian_odds.py` | `vip.titan007.com/AsianOdds_n.aspx?id={mid}` | GB2312 | `asian_odds_365` |
 | `asian_odds_history.py` | `vip.titan007.com/changeDetail/handicap.aspx?...` | GB2312 | `asian_odds_365_history` |
+| `live_score.py` | `live.titan007.com/jsData/{prefix}/{sid}.js` | GBK/UTF-8 | returns `{home_score, away_score, status}`; infers finished if 110+ min past kickoff |
 | `browser_filter.py` | Chrome/Edge LevelDB (binary scan) | — | returns `list[str]` IDs (Base36-decoded) |
 | `freshness.py` | DB queries | — | `should_fetch_*()` bool helpers |
+| `config.py` | `data/config.json` | — | `get/set_refresh_interval()`; default 1200 s |
 
 ### Freshness thresholds (`src/service/freshness.py`)
 
@@ -105,7 +107,9 @@ List view over `history.db.saved_matches` with four filter dialogs (`dialogs.py`
 
 - **Async IO**: every HTTP call wrapped in `run.io_bound()` so it doesn't block NiceGUI's event loop.
 - **`@ui.refreshable`**: used for tables and step rows; call `.refresh()` for fine-grained re-render.
-- **Conclusion page** reads either live (`queries.load_all_from_quant`) or snapshot (`repo.history.load_snapshot`) depending on `source` passed to its trigger; both return the same `{match, extras, recent, h2h, odds, asian_odds}` shape.
+- **Conclusion page** reads either live (`queries.load_all_from_quant`) or snapshot (`repo.history.load_snapshot`) depending on `source` passed to its trigger; both return the same `{match, extras, recent, h2h, odds, asian_odds, league_table}` shape.
+- **Match-list rank prefix**: `queries._rank_prefix(name, rank)` prepends `[N]` to team names; prefers standings data, falls back to `matches.home_rank / away_rank`.
+- **Config persistence**: `src/service/config.py` reads/writes `data/config.json`; `refresh_interval` defaults to 1200 s (20 min), range 60–3600 s.
 - **`src/scraper/`**: legacy, not used by the current flow.
 
 ## Build Notes
