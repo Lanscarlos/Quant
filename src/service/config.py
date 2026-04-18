@@ -20,7 +20,7 @@ def _get_config_path() -> Path:
 _CONFIG_PATH = _get_config_path()
 
 _DEFAULTS: dict = {
-    "refresh_interval": 300,   # 赛事列表自动刷新间隔（秒），默认 5 分钟
+    "refresh_interval": 1200,  # 赛事列表自动刷新间隔（秒），默认 20 分钟
 }
 
 
