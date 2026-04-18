@@ -26,7 +26,6 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
     odds         = data['odds']
     asian_odds   = data['asian_odds']
     league_table = data.get('league_table') or {}
-    has_table    = bool(league_table.get('total'))
     if table_vis is None:
         table_vis = {'open': True}
 
@@ -63,12 +62,11 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
                 if on_back:
                     on_back(source)
             ui.button('返回', on_click=_go_back).props('outline size=sm color=negative')
-            if has_table:
-                ui.element('div').classes('flex-1')
-                btn_collapse = ui.button('收起积分榜', icon='chevron_right', on_click=_toggle_table).props('outline size=sm')
-                btn_collapse.bind_visibility_from(table_vis, 'open')
-                btn_expand = ui.button('展开积分榜', icon='chevron_left', on_click=_toggle_table).props('outline size=sm')
-                btn_expand.bind_visibility_from(table_vis, 'open', backward=lambda v: not v)
+            ui.element('div').classes('flex-1')
+            btn_collapse = ui.button('收起积分榜', icon='chevron_right', on_click=_toggle_table).props('outline size=sm')
+            btn_collapse.bind_visibility_from(table_vis, 'open')
+            btn_expand = ui.button('展开积分榜', icon='chevron_left', on_click=_toggle_table).props('outline size=sm')
+            btn_expand.bind_visibility_from(table_vis, 'open', backward=lambda v: not v)
 
         ui.separator().classes('mb-2')
 
@@ -158,10 +156,9 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
                         ui.textarea().classes('w-full').props('outlined dense rows=6')
 
             # 右侧积分榜（与主客队头部顶部对齐，可收起）
-            if has_table:
-                with ui.column().classes('w-44 shrink-0 border-l border-slate-200 pl-2 gap-0') as standings_col:
-                    standings_col.bind_visibility_from(table_vis, 'open')
-                    render_league_table_section(league_table)
+            with ui.column().classes('w-44 shrink-0 border-l border-slate-200 pl-2 gap-0') as standings_col:
+                standings_col.bind_visibility_from(table_vis, 'open')
+                render_league_table_section(league_table)
 
 
 def render(on_back: callable = None, on_refetch: callable = None):

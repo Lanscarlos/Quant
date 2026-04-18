@@ -114,6 +114,10 @@ def render_league_table_section(league_table: dict):
     """
     total = league_table.get('total') if league_table else []
     if not total:
+        with ui.column().classes('w-full items-center gap-2 py-4'):
+            ui.label('联赛积分榜').classes('text-xs font-semibold text-slate-600 w-full')
+            ui.icon('info_outline').classes('text-slate-300 text-2xl')
+            ui.label('暂无数据').classes('text-xs text-slate-400')
         return
 
     with ui.column().classes('w-full gap-1'):
