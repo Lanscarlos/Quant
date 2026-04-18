@@ -363,6 +363,8 @@ def fetch_match_all(match_id: str | int, tracker=None) -> dict:
 
     with _t('league_table', '保存赛前积分榜'):
         lt_rows = upsert_league_table(conn, record)
+    with conn:
+        conn.execute("UPDATE matches SET league_table_fetched = 1 WHERE schedule_id = ?", (sid,))
     if tracker:
         _t_lt = tracker.task('league_table_rows', '积分榜行数').start()
         if lt_rows == 0:

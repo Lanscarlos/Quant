@@ -87,7 +87,16 @@ def should_fetch_detail(schedule_id: int, *, status: int | None = None) -> bool:
     if status is None:
         status = _match_status(schedule_id)
     if status == -1:
-        return row is None      # 完场：DB 没有才抓，有了永不重抓
+        if row is None:
+            return True   # 完场：standings 完全没有，需要抓
+        # standings 有，但积分榜快照尚未用新代码处理过 → 补抓一次
+        lt_flag = conn.execute(
+            "SELECT league_table_fetched FROM matches WHERE schedule_id = ?",
+            (schedule_id,),
+        ).fetchone()
+        if not lt_flag or not lt_flag[0]:
+            return True
+        return False
     return _is_stale(row[0] if row else None, _DETAIL_STALE)
 
 

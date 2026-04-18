@@ -340,6 +340,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "match_h2h", "home_rank", "INTEGER")
     _add_column_if_missing(conn, "match_h2h", "away_rank", "INTEGER")
     _add_column_if_missing(conn, "matches", "league_name_cn", "TEXT")
+    # league_table_snapshot 是后加的表；旧赛事需要补抓一次，通过此标志追踪
+    _add_column_if_missing(conn, "matches", "league_table_fetched", "INTEGER NOT NULL DEFAULT 0")
 
 
 def _add_column_if_missing(

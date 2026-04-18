@@ -56,7 +56,7 @@ _CIRCLE_CLS = {
 }
 
 
-def render(on_complete=None):
+def render(on_complete=None, on_status_change=None):
     state = {
         'running':   False,
         'abort':     False,
@@ -170,6 +170,12 @@ def render(on_complete=None):
         state['messages'][key] = msg
         refresh_fns[key].refresh()
         circle_fns[key].refresh()
+        if on_status_change:
+            done_count = sum(
+                1 for v in state['statuses'].values()
+                if v in ('done', 'skipped', 'error', 'stopped')
+            )
+            on_status_change(state['running'], done_count, len(STEPS), state['mid'])
 
     def _parse_mid(raw: str) -> str | None:
         """从 URL 或纯数字中提取赛事 ID."""
@@ -195,6 +201,8 @@ def render(on_complete=None):
             sub_refresh_fns[s.KEY].refresh()
 
         state.update(running=True, mid=int(mid_str))
+        if on_status_change:
+            on_status_change(True, 0, len(STEPS), int(mid_str))
         fetch_btn.disable()
         stop_btn.classes(remove='hidden')
 
@@ -266,6 +274,8 @@ def render(on_complete=None):
         stop_btn.classes(add='hidden')
         state['running'] = False
         force_checkbox.set_value(False)
+        if on_status_change:
+            on_status_change(False, len(STEPS), len(STEPS), state['mid'])
 
         # 只要没有用户中断，即使部分步骤失败也跳转结论页
         if not state['abort'] and on_complete:
