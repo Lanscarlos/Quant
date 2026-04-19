@@ -320,6 +320,66 @@ _DDL = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_365_history_match ON asian_odds_365_history(schedule_id)",
+
+    # ------------------------------------------------------------------
+    # 13. odds_365 — Bet365 欧赔快照
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS odds_365 (
+        schedule_id       INTEGER PRIMARY KEY,
+        record_id         INTEGER,
+        open_win          REAL,
+        open_draw         REAL,
+        open_lose         REAL,
+        open_win_prob     REAL,
+        open_draw_prob    REAL,
+        open_lose_prob    REAL,
+        open_payout_rate  REAL,
+        cur_win           REAL,
+        cur_draw          REAL,
+        cur_lose          REAL,
+        cur_win_prob      REAL,
+        cur_draw_prob     REAL,
+        cur_lose_prob     REAL,
+        cur_payout_rate   REAL,
+        kelly_win         REAL,
+        kelly_draw        REAL,
+        kelly_lose        REAL,
+        hist_kelly_win    REAL,
+        hist_kelly_draw   REAL,
+        hist_kelly_lose   REAL,
+        change_time       TEXT,
+        fetched_at        TEXT NOT NULL DEFAULT (datetime('now', '+8 hours'))
+    )
+    """,
+
+    # ------------------------------------------------------------------
+    # 14. odds_365_history — Bet365 欧赔历史
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS odds_365_history (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        schedule_id  INTEGER NOT NULL,
+        win          REAL,
+        draw         REAL,
+        lose         REAL,
+        win_prob     REAL,
+        draw_prob    REAL,
+        lose_prob    REAL,
+        payout_rate  REAL,
+        kelly_win    REAL,
+        kelly_draw   REAL,
+        kelly_lose   REAL,
+        change_time  TEXT    NOT NULL,
+        is_opening   INTEGER NOT NULL DEFAULT 0,
+        win_dir      TEXT CHECK(win_dir  IN ('up', 'down', 'unchanged')),
+        draw_dir     TEXT CHECK(draw_dir IN ('up', 'down', 'unchanged')),
+        lose_dir     TEXT CHECK(lose_dir IN ('up', 'down', 'unchanged')),
+        UNIQUE(schedule_id, change_time)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_365euro_history_match  ON odds_365_history(schedule_id)",
+    "CREATE INDEX IF NOT EXISTS idx_365euro_history_lookup ON odds_365_history(schedule_id, is_opening, change_time DESC)",
 ]
 
 

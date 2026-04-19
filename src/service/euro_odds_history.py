@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 
 COMPANY_WH    = 115  # William Hill 威廉希尔
 COMPANY_CORAL = 82   # Ladbrokes/Coral 立博
+COMPANY_365   = 281  # Bet365
 
 _HEADERS = {
     "User-Agent": (
@@ -106,11 +107,14 @@ def fetch_euro_odds_history(
     """
     from contextlib import nullcontext
     from src.db import get_conn
-    from src.db.repo.odds_history import upsert_wh_history, upsert_coral_history
+    from src.db.repo.odds_history import upsert_wh_history, upsert_coral_history, upsert_365_history
 
-    is_wh = int(cid) == COMPANY_WH
-    company = '威廉希尔' if is_wh else '立博'
-    prefix  = 'wh' if is_wh else 'coral'
+    _COMPANY_INFO = {
+        COMPANY_WH:    ('威廉希尔', 'wh',    upsert_wh_history),
+        COMPANY_CORAL: ('立博',     'coral', upsert_coral_history),
+        COMPANY_365:   ('365',      'b365',  upsert_365_history),
+    }
+    company, prefix, upsert_fn = _COMPANY_INFO.get(int(cid), ('未知', 'unk', None))
 
     def _t(key, label):
         return tracker.task(f'{prefix}_{key}', label) if tracker else nullcontext()
@@ -121,8 +125,6 @@ def fetch_euro_odds_history(
         records = _fetch_and_parse(rid, mid, cid)
 
     with _t('save', f'保存{company}变盘历史 ({len(records)} 条)'):
-        if is_wh:
-            return upsert_wh_history(conn, int(mid), records, match_year)
-        else:
-            return upsert_coral_history(conn, int(mid), records, match_year)
+        if upsert_fn:
+            return upsert_fn(conn, int(mid), records, match_year)
     return 0

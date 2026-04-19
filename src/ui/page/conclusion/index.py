@@ -132,17 +132,20 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
 
                 ui.separator().classes('my-2')
 
-                # ── 近八场交手 ────────────────────────────────────────
+                # ── 近八场交手 + 365亚盘 (2:1) ───────────────────────
                 with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
-                    render_h2h_section(h2h, fetched=True, border_right=False)
+                    with ui.column().classes('flex-1 border-r border-slate-200 min-w-0'):
+                        render_h2h_section(h2h, fetched=True, border_right=False)
+                    with ui.column().classes('flex-1 min-w-0'):
+                        render_asian_section(asian_odds)
 
                 ui.separator().classes('my-2')
 
-                # ── 欧赔：威廉希尔 + 立博 + 365亚盘 ─────────────────
+                # ── 欧赔：威廉希尔 + 立博 + 365 ──────────────────────
                 with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
                     render_odds_section(odds, '威廉希尔', 'William Hill', border_right=True)
                     render_odds_section(odds, '立博', 'Ladbrokes', border_right=True)
-                    render_asian_section(asian_odds)
+                    render_odds_section(odds, '365欧赔', 'Bet365', border_right=False)
 
                 ui.separator().classes('my-2')
 

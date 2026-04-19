@@ -10,6 +10,7 @@ import requests
 
 COMPANY_WH    = 115  # William Hill 威廉希尔
 COMPANY_CORAL = 82   # Ladbrokes/Coral 立博
+COMPANY_365   = 281  # Bet365
 
 _HEADERS = {
     "User-Agent": (
@@ -89,15 +90,15 @@ def _get_record_ids(records: list[dict]) -> dict[int, int]:
             rid = int(r.get("record_id", 0))
         except (TypeError, ValueError):
             continue
-        if cid in (COMPANY_WH, COMPANY_CORAL) and rid:
+        if cid in (COMPANY_WH, COMPANY_CORAL, COMPANY_365) and rid:
             result[cid] = rid
     return result
 
 
 def _save_to_db(conn, schedule_id: int, records: list[dict]) -> dict:
-    from src.db.repo.odds import upsert_wh, upsert_coral
+    from src.db.repo.odds import upsert_wh, upsert_coral, upsert_365
 
-    result = {"wh": False, "coral": False}
+    result = {"wh": False, "coral": False, "b365": False}
     for r in records:
         try:
             cid = int(r.get("company_id", 0))
@@ -107,6 +108,8 @@ def _save_to_db(conn, schedule_id: int, records: list[dict]) -> dict:
             result["wh"] = upsert_wh(conn, schedule_id, r)
         elif cid == COMPANY_CORAL:
             result["coral"] = upsert_coral(conn, schedule_id, r)
+        elif cid == COMPANY_365:
+            result["b365"] = upsert_365(conn, schedule_id, r)
     return result
 
 

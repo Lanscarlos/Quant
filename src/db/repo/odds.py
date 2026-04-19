@@ -18,6 +18,11 @@ def upsert_coral(conn: sqlite3.Connection, schedule_id: int, r: dict) -> bool:
     return _upsert(conn, "odds_coral", schedule_id, r)
 
 
+def upsert_365(conn: sqlite3.Connection, schedule_id: int, r: dict) -> bool:
+    """Insert or replace a Bet365 European odds snapshot for one match."""
+    return _upsert(conn, "odds_365", schedule_id, r)
+
+
 def _upsert(conn: sqlite3.Connection, table: str, schedule_id: int, r: dict) -> bool:
     rid = None
     try:

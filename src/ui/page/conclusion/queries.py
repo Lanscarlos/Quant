@@ -187,8 +187,9 @@ def query_odds(mid: int) -> dict:
 
     result = {}
     for company, snap_tbl, hist_tbl in [
-        ('William Hill', 'odds_wh',   'odds_wh_history'),
+        ('William Hill', 'odds_wh',    'odds_wh_history'),
         ('Ladbrokes',    'odds_coral', 'odds_coral_history'),
+        ('Bet365',       'odds_365',   'odds_365_history'),
     ]:
         snap = conn.execute(f"""
             SELECT s.open_win, s.open_draw, s.open_lose, s.open_payout_rate,

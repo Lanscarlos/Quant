@@ -27,6 +27,16 @@ def upsert_coral_history(
     return _upsert(conn, "odds_coral_history", schedule_id, records, match_year)
 
 
+def upsert_365_history(
+    conn: sqlite3.Connection,
+    schedule_id: int,
+    records: list[dict],
+    match_year: int,
+) -> int:
+    """Insert Bet365 European odds history rows for one match."""
+    return _upsert(conn, "odds_365_history", schedule_id, records, match_year)
+
+
 def _upsert(
     conn: sqlite3.Connection,
     table: str,

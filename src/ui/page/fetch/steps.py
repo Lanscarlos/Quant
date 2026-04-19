@@ -105,7 +105,7 @@ class StepSubOdds:
 class StepEuroOdds:
     KEY   = 'euro_odds'
     ICON  = 'analytics'
-    LABEL = '欧赔数据 (威廉 / 立博)'
+    LABEL = '欧赔数据 (威廉 / 立博 / 365)'
     PHASE = 3
     DEPENDS_ON: list[str] = []
 
@@ -152,7 +152,7 @@ class StepAsianOdds:
 class StepEuroHistory:
     KEY   = 'euro_history'
     ICON  = 'timeline'
-    LABEL = '欧赔变盘历史'
+    LABEL = '欧赔变盘历史 (威廉 / 立博 / 365)'
     PHASE = 4
     DEPENDS_ON: list[str] = ['euro_odds']
 
@@ -167,14 +167,14 @@ class StepEuroHistory:
     @staticmethod
     async def fetch(mid: str, ctx: dict, tracker=None) -> None:
         from src.service.euro_odds_history import (
-            fetch_euro_odds_history, COMPANY_WH, COMPANY_CORAL,
+            fetch_euro_odds_history, COMPANY_WH, COMPANY_CORAL, COMPANY_365,
         )
 
         record_ids = ctx.get('record_ids') or _load_record_ids_from_db(int(mid))
         match_year = ctx.get('match_year') or _get_match_year(int(mid))
 
         tasks = []
-        for cid in (COMPANY_WH, COMPANY_CORAL):
+        for cid in (COMPANY_WH, COMPANY_CORAL, COMPANY_365):
             rid = record_ids.get(cid)
             if rid:
                 tasks.append(run.io_bound(fetch_euro_odds_history, rid, mid, cid, match_year, tracker))
@@ -182,7 +182,7 @@ class StepEuroHistory:
         if tasks:
             await asyncio.gather(*tasks)
         else:
-            raise ValueError('未找到威廉/立博的 record_id')
+            raise ValueError('未找到欧赔 record_id')
 
 
 # ── 阶段 4: 365 亚盘变盘历史 ────────────────────────────────────────────────────
@@ -242,7 +242,7 @@ def _load_record_ids_from_db(mid: int) -> dict[int, int]:
     from src.db import get_conn
     result = {}
     conn = get_conn()
-    for table, cid in [("odds_wh", 115), ("odds_coral", 82)]:
+    for table, cid in [("odds_wh", 115), ("odds_coral", 82), ("odds_365", 281)]:
         row = conn.execute(
             f"SELECT record_id FROM {table} WHERE schedule_id = ? AND record_id IS NOT NULL",
             (mid,),
