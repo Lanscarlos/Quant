@@ -77,13 +77,14 @@ _DDL = [
     # ------------------------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS saved_snapshots (
-        saved_match_id  INTEGER PRIMARY KEY REFERENCES saved_matches(id) ON DELETE CASCADE,
-        match_json      TEXT,
-        extras_json     TEXT,
-        recent_json     TEXT,
-        h2h_json        TEXT,
-        odds_json       TEXT,
-        asian_odds_json TEXT
+        saved_match_id    INTEGER PRIMARY KEY REFERENCES saved_matches(id) ON DELETE CASCADE,
+        match_json        TEXT,
+        extras_json       TEXT,
+        recent_json       TEXT,
+        h2h_json          TEXT,
+        odds_json         TEXT,
+        asian_odds_json   TEXT,
+        league_table_json TEXT
     )
     """,
 ]
@@ -94,7 +95,7 @@ def create_all(conn: sqlite3.Connection) -> None:
     with conn:
         for stmt in _DDL:
             conn.execute(stmt)
-        # Incremental migrations for existing databases
+        # saved_matches 增量 migration
         existing = {r[1] for r in conn.execute("PRAGMA table_info(saved_matches)")}
         for col, ddl in [
             ('wh_h30_win',  'ALTER TABLE saved_matches ADD COLUMN wh_h30_win  REAL'),
@@ -102,4 +103,11 @@ def create_all(conn: sqlite3.Connection) -> None:
             ('wh_h30_lose', 'ALTER TABLE saved_matches ADD COLUMN wh_h30_lose REAL'),
         ]:
             if col not in existing:
+                conn.execute(ddl)
+        # saved_snapshots 增量 migration
+        existing_snap = {r[1] for r in conn.execute("PRAGMA table_info(saved_snapshots)")}
+        for col, ddl in [
+            ('league_table_json', 'ALTER TABLE saved_snapshots ADD COLUMN league_table_json TEXT'),
+        ]:
+            if col not in existing_snap:
                 conn.execute(ddl)

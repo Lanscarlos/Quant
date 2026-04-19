@@ -13,7 +13,7 @@ from src.db import get_conn
 from src.db.history_connection import get_history_conn
 from src.ui.page.conclusion.queries import (
     query_match, query_header_extras, query_recent_matches,
-    query_h2h, query_odds, query_asian_odds,
+    query_h2h, query_odds, query_asian_odds, query_league_table,
 )
 
 
@@ -122,26 +122,29 @@ def save_match(mid: int) -> int:
 
         # Snapshot JSON
         snapshot = {
-            'match': match,
-            'extras': extras,
-            'recent': recent,
-            'h2h': h2h,
-            'odds': odds,
-            'asian_odds': asian_odds,
+            'match':        match,
+            'extras':       extras,
+            'recent':       recent,
+            'h2h':          h2h,
+            'odds':         odds,
+            'asian_odds':   asian_odds,
+            'league_table': query_league_table(mid),
         }
         hconn.execute("""
             INSERT OR REPLACE INTO saved_snapshots (
                 saved_match_id, match_json, extras_json,
-                recent_json, h2h_json, odds_json, asian_odds_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                recent_json, h2h_json, odds_json, asian_odds_json,
+                league_table_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             saved_id,
-            json.dumps(snapshot['match'], ensure_ascii=False),
-            json.dumps(snapshot['extras'], ensure_ascii=False),
-            json.dumps(snapshot['recent'], ensure_ascii=False),
-            json.dumps(snapshot['h2h'], ensure_ascii=False),
-            json.dumps(snapshot['odds'], ensure_ascii=False),
-            json.dumps(snapshot['asian_odds'], ensure_ascii=False),
+            json.dumps(snapshot['match'],        ensure_ascii=False),
+            json.dumps(snapshot['extras'],       ensure_ascii=False),
+            json.dumps(snapshot['recent'],       ensure_ascii=False),
+            json.dumps(snapshot['h2h'],          ensure_ascii=False),
+            json.dumps(snapshot['odds'],         ensure_ascii=False),
+            json.dumps(snapshot['asian_odds'],   ensure_ascii=False),
+            json.dumps(snapshot['league_table'], ensure_ascii=False),
         ))
 
     return saved_id
@@ -156,14 +159,14 @@ def load_snapshot(schedule_id: int) -> dict | None:
     hconn = get_history_conn()
     row = hconn.execute("""
         SELECT s.match_json, s.extras_json, s.recent_json,
-               s.h2h_json, s.odds_json, s.asian_odds_json
+               s.h2h_json, s.odds_json, s.asian_odds_json,
+               s.league_table_json
         FROM saved_snapshots s
         JOIN saved_matches m ON m.id = s.saved_match_id
         WHERE m.schedule_id = ?
     """, (schedule_id,)).fetchone()
     if not row:
         return None
-    from src.ui.page.conclusion.queries import query_league_table
     return {
         'match':        json.loads(row[0]) if row[0] else None,
         'extras':       json.loads(row[1]) if row[1] else {},
@@ -171,7 +174,8 @@ def load_snapshot(schedule_id: int) -> dict | None:
         'h2h':          json.loads(row[3]) if row[3] else {'rows': [], 'win': 0, 'draw': 0, 'loss': 0},
         'odds':         json.loads(row[4]) if row[4] else {},
         'asian_odds':   json.loads(row[5]) if row[5] else None,
-        'league_table': query_league_table(schedule_id),
+        # 旧快照 league_table_json 为 NULL 时回退读 quant.db，新记录走 JSON
+        'league_table': json.loads(row[6]) if row[6] else query_league_table(schedule_id),
     }
 
 
@@ -440,7 +444,8 @@ def export_to_json(filters: dict | None) -> str:
     rows = hconn.execute(f"""
         SELECT m.*,
                s.match_json, s.extras_json, s.recent_json,
-               s.h2h_json, s.odds_json, s.asian_odds_json
+               s.h2h_json, s.odds_json, s.asian_odds_json,
+               s.league_table_json
         FROM saved_matches m
         LEFT JOIN saved_snapshots s ON s.saved_match_id = m.id
         {where}
@@ -452,7 +457,7 @@ def export_to_json(filters: dict | None) -> str:
         d = dict(r)
         snapshot = {}
         for key in ('match_json', 'extras_json', 'recent_json',
-                    'h2h_json', 'odds_json', 'asian_odds_json'):
+                    'h2h_json', 'odds_json', 'asian_odds_json', 'league_table_json'):
             raw = d.pop(key, None)
             field = key.replace('_json', '')
             snapshot[field] = json.loads(raw) if raw else None
@@ -502,7 +507,7 @@ _IMPORT_MATCH_COLS = [
     'analysis_note', 'tags',
 ]
 
-_SNAPSHOT_KEYS = ('match', 'extras', 'recent', 'h2h', 'odds', 'asian_odds')
+_SNAPSHOT_KEYS = ('match', 'extras', 'recent', 'h2h', 'odds', 'asian_odds', 'league_table')
 
 
 def import_from_json(content: str, overwrite: bool = False) -> dict:
@@ -575,8 +580,9 @@ def import_from_json(content: str, overwrite: bool = False) -> dict:
                     hconn.execute("""
                         INSERT OR REPLACE INTO saved_snapshots (
                             saved_match_id, match_json, extras_json,
-                            recent_json, h2h_json, odds_json, asian_odds_json
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                            recent_json, h2h_json, odds_json, asian_odds_json,
+                            league_table_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """, [saved_id] + json_vals)
 
                 imported += 1
