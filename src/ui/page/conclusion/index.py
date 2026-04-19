@@ -10,7 +10,7 @@ from nicegui import ui
 
 from .formatters import fmt_display
 from .queries import load_all_from_quant
-from .renderers import render_asian_section, render_h2h_section, render_league_table_section, render_odds_section, render_recent_section, wdl_badges
+from .renderers import render_asian_section, render_h2h_section, render_league_table_section, render_odds_section, render_over_under_section, render_recent_section, wdl_badges
 
 
 def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live', table_vis: dict | None = None) -> None:
@@ -25,6 +25,7 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
     h2h          = data['h2h']
     odds         = data['odds']
     asian_odds   = data['asian_odds']
+    over_under   = data.get('over_under')
     league_table = data.get('league_table') or {}
     if table_vis is None:
         table_vis = {'open': True}
@@ -132,10 +133,11 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
 
                 ui.separator().classes('my-2')
 
-                # ── 近八场交手 + 365亚盘 (1:1) ───────────────────────
+                # ── 近八场交手 + 365亚盘 + 365大小球 (1:1:1) ─────────
                 with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
                     render_h2h_section(h2h, fetched=True, border_right=True)
-                    render_asian_section(asian_odds)
+                    render_asian_section(asian_odds, border_right=True)
+                    render_over_under_section(over_under)
 
                 ui.separator().classes('my-2')
 

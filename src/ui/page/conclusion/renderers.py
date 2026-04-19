@@ -1,7 +1,7 @@
 """UI helpers and section renderers for the conclusion page."""
 from nicegui import ui
 
-from .columns import ASIAN_COLS, H2H_COLS, ODDS_COLS, RECENT_COLS
+from .columns import ASIAN_COLS, H2H_COLS, ODDS_COLS, OVER_UNDER_COLS, RECENT_COLS
 
 # 近期/交手表格固定显示 8 行，真实数据不足时用以下占位符补齐
 _RECENT_EMPTY = {'home_name': '-', 'away_name': '-', 'score': '-', 'h30_odds': '-', 'cur_odds': '-'}
@@ -54,6 +54,7 @@ def render_h2h_section(h2h: dict, fetched: bool = False, border_right: bool = Tr
 
 _ODDS_EMPTY  = {'win': '-', 'draw': '-', 'lose': '-', 'payout': '-', 'time': '-'}
 _ASIAN_EMPTY = {'home': '-', 'hc': '-', 'away': '-', 'time': '-', 'data': '-'}
+_OU_EMPTY    = {'over': '-', 'goals': '-', 'under': '-', 'time': '-', 'data': '-'}
 
 
 def _dir_slot(dir_field: str) -> str:
@@ -81,8 +82,9 @@ def render_odds_section(odds: dict, label: str, company_key: str, border_right: 
             no_data_hint()
 
 
-def render_asian_section(asian_row: dict | None):
-    with ui.column().classes('flex-1 p-2 gap-1 min-w-0'):
+def render_asian_section(asian_row: dict | None, border_right: bool = False):
+    border_cls = 'border-r border-slate-200' if border_right else ''
+    with ui.column().classes(f'flex-1 {border_cls} p-2 gap-1 min-w-0'):
         ui.label('365亚盘').classes('text-xs font-semibold text-slate-600')
         if asian_row:
             history = asian_row['history']
@@ -92,6 +94,21 @@ def render_asian_section(asian_row: dict | None):
             t = ui.table(columns=ASIAN_COLS, rows=rows).classes('w-full text-xs').props('dense flat')
             t.add_slot('body-cell-home', _dir_slot('home_dir'))
             t.add_slot('body-cell-away', _dir_slot('away_dir'))
+        else:
+            no_data_hint()
+
+
+def render_over_under_section(ou_row: dict | None):
+    with ui.column().classes('flex-1 p-2 gap-1 min-w-0'):
+        ui.label('365大小球').classes('text-xs font-semibold text-slate-600')
+        if ou_row:
+            history = ou_row['history']
+            padded  = (history + [_OU_EMPTY] * 3)[:3]
+            open_r  = {**ou_row['open'], 'data': '-'}
+            rows    = [open_r] + [{**r, 'data': '-'} for r in padded]
+            t = ui.table(columns=OVER_UNDER_COLS, rows=rows).classes('w-full text-xs').props('dense flat')
+            t.add_slot('body-cell-over',  _dir_slot('over_dir'))
+            t.add_slot('body-cell-under', _dir_slot('under_dir'))
         else:
             no_data_hint()
 

@@ -17,8 +17,10 @@ from src.service.freshness import (
     should_fetch_detail,
     should_fetch_odds,
     should_fetch_asian_odds,
+    should_fetch_over_under,
     should_fetch_history,
     should_fetch_asian_history,
+    should_fetch_over_under_history,
 )
 
 
@@ -147,6 +149,29 @@ class StepAsianOdds:
         await run.io_bound(fetch_asian_odds, mid, tracker)
 
 
+# ── 阶段 3: 365 大小球数据 ──────────────────────────────────────────────────────
+
+class StepOverUnder:
+    KEY   = 'over_under'
+    ICON  = 'straighten'
+    LABEL = '365 大小球数据'
+    PHASE = 3
+    DEPENDS_ON: list[str] = []
+
+    @staticmethod
+    def should_skip(mid: int, force: bool = False) -> tuple[bool, str]:
+        if force:
+            return False, ''
+        if not should_fetch_over_under(mid):
+            return True, '数据仍然新鲜，已跳过'
+        return False, ''
+
+    @staticmethod
+    async def fetch(mid: str, ctx: dict, tracker=None) -> None:
+        from src.service.over_under import fetch_over_under
+        await run.io_bound(fetch_over_under, mid, tracker)
+
+
 # ── 阶段 4: 欧赔变盘历史 ────────────────────────────────────────────────────────
 
 class StepEuroHistory:
@@ -209,9 +234,37 @@ class StepAsianHistory:
         await run.io_bound(fetch_asian_odds_history, mid, match_year, tracker)
 
 
+# ── 阶段 4: 365 大小球变盘历史 ──────────────────────────────────────────────────
+
+class StepOverUnderHistory:
+    KEY   = 'over_under_history'
+    ICON  = 'trending_flat'
+    LABEL = '365 大小球变盘历史'
+    PHASE = 4
+    DEPENDS_ON: list[str] = []
+
+    @staticmethod
+    def should_skip(mid: int, force: bool = False) -> tuple[bool, str]:
+        if force:
+            return False, ''
+        if not should_fetch_over_under_history(mid):
+            return True, '数据仍然新鲜，已跳过'
+        return False, ''
+
+    @staticmethod
+    async def fetch(mid: str, ctx: dict, tracker=None) -> None:
+        from src.service.over_under_history import fetch_over_under_history
+        match_year = ctx.get('match_year') or _get_match_year(int(mid))
+        await run.io_bound(fetch_over_under_history, mid, match_year, tracker)
+
+
 # ── 有序步骤列表 & 分阶段分组 ────────────────────────────────────────────────────
 
-STEPS = [StepMatchDetail, StepSubOdds, StepEuroOdds, StepAsianOdds, StepEuroHistory, StepAsianHistory]
+STEPS = [
+    StepMatchDetail, StepSubOdds,
+    StepEuroOdds, StepAsianOdds, StepOverUnder,
+    StepEuroHistory, StepAsianHistory, StepOverUnderHistory,
+]
 
 PHASES: list[list] = []
 _phase_map: dict[int, list] = {}

@@ -180,3 +180,32 @@ def should_fetch_asian_history(schedule_id: int) -> bool:
     if _match_status(schedule_id) == -1:
         return count == 0   # 完场：抓过一次就不再抓
     return True
+
+
+# ── over_under (大小球) ───────────────────────────────────────────────────────
+
+def should_fetch_over_under(schedule_id: int, *, status: int | None = None) -> bool:
+    """True → 调用 fetch_over_under()；False → 直接读 DB。"""
+    conn = get_conn()
+    if status is None:
+        status = _match_status(schedule_id)
+    if status == -1:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM over_under_365 WHERE schedule_id = ?", (schedule_id,)
+        ).fetchone()[0]
+        return count == 0
+    row = conn.execute(
+        "SELECT fetched_at FROM over_under_365 WHERE schedule_id = ?", (schedule_id,)
+    ).fetchone()
+    threshold = _ODDS_THRESHOLDS.get(status, _ODDS_STALE_DEFAULT)
+    return _is_stale(row[0] if row else None, threshold)
+
+
+def should_fetch_over_under_history(schedule_id: int) -> bool:
+    """True → 调用 fetch_over_under_history()；False → 直接读 DB。"""
+    count = get_conn().execute(
+        "SELECT COUNT(*) FROM over_under_365_history WHERE schedule_id = ?", (schedule_id,)
+    ).fetchone()[0]
+    if _match_status(schedule_id) == -1:
+        return count == 0   # 完场：抓过一次就不再抓
+    return True

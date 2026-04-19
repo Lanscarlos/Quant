@@ -281,6 +281,52 @@ def query_asian_odds(mid: int) -> dict | None:
     }
 
 
+# ── Over/Under odds ───────────────────────────────────────────────────────────
+
+def query_over_under(mid: int) -> dict | None:
+    """Return {'open': row, 'history': [up to 3 rows before kick-off]}, or None."""
+    conn = get_conn()
+    mt_row = conn.execute("SELECT match_time FROM matches WHERE schedule_id = ?", (mid,)).fetchone()
+    match_time = mt_row[0] if mt_row else None
+
+    snap = conn.execute("""
+        SELECT o.open_goals, o.open_over, o.open_under,
+               oh.change_time
+        FROM over_under_365 o
+        LEFT JOIN over_under_365_history oh
+            ON oh.schedule_id = o.schedule_id AND oh.is_opening = 1
+        WHERE o.schedule_id = ?
+    """, (mid,)).fetchone()
+    if not snap:
+        return None
+
+    hist_rows = conn.execute("""
+        SELECT over_odds, goals_line, under_odds, change_time, over_dir, under_dir
+        FROM over_under_365_history
+        WHERE schedule_id = ? AND is_opening = 0
+          AND (? IS NULL OR change_time < ?)
+        ORDER BY change_time DESC
+        LIMIT 3
+    """, (mid, match_time, match_time)).fetchall()
+
+    return {
+        'open': {
+            'goals': snap[0] or '-',
+            'over':  fmt_float(snap[1]),
+            'under': fmt_float(snap[2]),
+            'time':  snap[3] or '-',
+        },
+        'history': [{
+            'goals':     r[1] or '-',
+            'over':      fmt_float(r[0]),
+            'under':     fmt_float(r[2]),
+            'time':      r[3] or '-',
+            'over_dir':  r[4] or '',
+            'under_dir': r[5] or '',
+        } for r in reversed(hist_rows)],
+    }
+
+
 # ── Aggregate all sections ─────────────────────────────────────────────────────
 
 def query_all_sections(mid: int) -> dict:
@@ -290,6 +336,7 @@ def query_all_sections(mid: int) -> dict:
         'h2h':         query_h2h(mid),
         'odds':        query_odds(mid),
         'asian_odds':  query_asian_odds(mid),
+        'over_under':  query_over_under(mid),
         'detail_fetched': get_conn().execute(
             "SELECT 1 FROM match_standings WHERE schedule_id = ? LIMIT 1", (mid,)
         ).fetchone() is not None,
@@ -321,6 +368,7 @@ def load_all_from_quant(mid: int) -> dict:
         'h2h':          query_h2h(mid),
         'odds':         query_odds(mid),
         'asian_odds':   query_asian_odds(mid),
+        'over_under':   query_over_under(mid),
         'league_table': query_league_table(mid),
     }
 

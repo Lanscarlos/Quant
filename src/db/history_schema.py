@@ -54,6 +54,14 @@ _DDL = [
         asian_cur_home      REAL,
         asian_cur_away      REAL,
 
+        -- Bet365 大小球
+        ou_open_goals       TEXT,
+        ou_open_over        REAL,
+        ou_open_under       REAL,
+        ou_cur_goals        TEXT,
+        ou_cur_over         REAL,
+        ou_cur_under        REAL,
+
         -- 积分 & 胜平负
         home_pts            INTEGER,
         away_pts            INTEGER,
@@ -84,7 +92,8 @@ _DDL = [
         h2h_json          TEXT,
         odds_json         TEXT,
         asian_odds_json   TEXT,
-        league_table_json TEXT
+        league_table_json TEXT,
+        over_under_json   TEXT
     )
     """,
 ]
@@ -98,9 +107,15 @@ def create_all(conn: sqlite3.Connection) -> None:
         # saved_matches 增量 migration
         existing = {r[1] for r in conn.execute("PRAGMA table_info(saved_matches)")}
         for col, ddl in [
-            ('wh_h30_win',  'ALTER TABLE saved_matches ADD COLUMN wh_h30_win  REAL'),
-            ('wh_h30_draw', 'ALTER TABLE saved_matches ADD COLUMN wh_h30_draw REAL'),
-            ('wh_h30_lose', 'ALTER TABLE saved_matches ADD COLUMN wh_h30_lose REAL'),
+            ('wh_h30_win',   'ALTER TABLE saved_matches ADD COLUMN wh_h30_win   REAL'),
+            ('wh_h30_draw',  'ALTER TABLE saved_matches ADD COLUMN wh_h30_draw  REAL'),
+            ('wh_h30_lose',  'ALTER TABLE saved_matches ADD COLUMN wh_h30_lose  REAL'),
+            ('ou_open_goals','ALTER TABLE saved_matches ADD COLUMN ou_open_goals TEXT'),
+            ('ou_open_over', 'ALTER TABLE saved_matches ADD COLUMN ou_open_over  REAL'),
+            ('ou_open_under','ALTER TABLE saved_matches ADD COLUMN ou_open_under REAL'),
+            ('ou_cur_goals', 'ALTER TABLE saved_matches ADD COLUMN ou_cur_goals  TEXT'),
+            ('ou_cur_over',  'ALTER TABLE saved_matches ADD COLUMN ou_cur_over   REAL'),
+            ('ou_cur_under', 'ALTER TABLE saved_matches ADD COLUMN ou_cur_under  REAL'),
         ]:
             if col not in existing:
                 conn.execute(ddl)
@@ -108,6 +123,7 @@ def create_all(conn: sqlite3.Connection) -> None:
         existing_snap = {r[1] for r in conn.execute("PRAGMA table_info(saved_snapshots)")}
         for col, ddl in [
             ('league_table_json', 'ALTER TABLE saved_snapshots ADD COLUMN league_table_json TEXT'),
+            ('over_under_json',   'ALTER TABLE saved_snapshots ADD COLUMN over_under_json   TEXT'),
         ]:
             if col not in existing_snap:
                 conn.execute(ddl)

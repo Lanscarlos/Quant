@@ -380,6 +380,42 @@ _DDL = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_365euro_history_match  ON odds_365_history(schedule_id)",
     "CREATE INDEX IF NOT EXISTS idx_365euro_history_lookup ON odds_365_history(schedule_id, is_opening, change_time DESC)",
+
+    # ------------------------------------------------------------------
+    # 15. over_under_365 — Bet365 大小球快照
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS over_under_365 (
+        schedule_id   INTEGER PRIMARY KEY REFERENCES matches(schedule_id) ON DELETE CASCADE,
+        open_goals    TEXT,
+        open_over     REAL,
+        open_under    REAL,
+        cur_goals     TEXT,
+        cur_over      REAL,
+        cur_under     REAL,
+        fetched_at    TEXT NOT NULL DEFAULT (datetime('now', '+8 hours'))
+    )
+    """,
+
+    # ------------------------------------------------------------------
+    # 16. over_under_365_history — Bet365 大小球变盘历史
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS over_under_365_history (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        schedule_id  INTEGER NOT NULL,
+        change_time  TEXT    NOT NULL,
+        score        TEXT,
+        over_odds    REAL,
+        goals_line   TEXT,
+        under_odds   REAL,
+        is_opening   INTEGER NOT NULL DEFAULT 0,
+        over_dir     TEXT CHECK(over_dir  IN ('up', 'down', 'unchanged')),
+        under_dir    TEXT CHECK(under_dir IN ('up', 'down', 'unchanged')),
+        UNIQUE(schedule_id, change_time)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_ou_history_match ON over_under_365_history(schedule_id)",
 ]
 
 

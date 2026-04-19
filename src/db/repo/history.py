@@ -13,7 +13,7 @@ from src.db import get_conn
 from src.db.history_connection import get_history_conn
 from src.ui.page.conclusion.queries import (
     query_match, query_header_extras, query_recent_matches,
-    query_h2h, query_odds, query_asian_odds, query_league_table,
+    query_h2h, query_odds, query_asian_odds, query_over_under, query_league_table,
 )
 
 
@@ -37,6 +37,7 @@ def save_match(mid: int) -> int:
     h2h = query_h2h(mid)
     odds = query_odds(mid)
     asian_odds = query_asian_odds(mid)
+    over_under = query_over_under(mid)
 
     # ── Read raw odds from quant.db for denormalized columns ──────────
     qconn = get_conn()
@@ -61,6 +62,10 @@ def save_match(mid: int) -> int:
         "SELECT open_handicap, open_home, open_away, cur_handicap, cur_home, cur_away "
         "FROM asian_odds_365 WHERE schedule_id = ?", (mid,)
     ).fetchone()
+    ou = qconn.execute(
+        "SELECT open_goals, open_over, open_under, cur_goals, cur_over, cur_under "
+        "FROM over_under_365 WHERE schedule_id = ?", (mid,)
+    ).fetchone()
 
     home_wdl = extras.get('home_wdl')
     away_wdl = extras.get('away_wdl')
@@ -80,6 +85,8 @@ def save_match(mid: int) -> int:
                 coral_cur_win, coral_cur_draw, coral_cur_lose,
                 asian_open_handicap, asian_open_home, asian_open_away,
                 asian_cur_handicap, asian_cur_home, asian_cur_away,
+                ou_open_goals, ou_open_over, ou_open_under,
+                ou_cur_goals,  ou_cur_over,  ou_cur_under,
                 home_pts, away_pts,
                 home_wdl_win, home_wdl_draw, home_wdl_loss,
                 away_wdl_win, away_wdl_draw, away_wdl_loss
@@ -87,6 +94,8 @@ def save_match(mid: int) -> int:
                 ?, ?, ?, ?, ?,
                 ?, ?,
                 ?, ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?,
                 ?, ?, ?,
                 ?, ?, ?,
                 ?, ?, ?,
@@ -109,6 +118,8 @@ def save_match(mid: int) -> int:
             coral[3] if coral else None, coral[4] if coral else None, coral[5] if coral else None,
             asian[0] if asian else None, asian[1] if asian else None, asian[2] if asian else None,
             asian[3] if asian else None, asian[4] if asian else None, asian[5] if asian else None,
+            ou[0] if ou else None, ou[1] if ou else None, ou[2] if ou else None,
+            ou[3] if ou else None, ou[4] if ou else None, ou[5] if ou else None,
             extras.get('home_pts'), extras.get('away_pts'),
             home_wdl[0] if home_wdl else None, home_wdl[1] if home_wdl else None, home_wdl[2] if home_wdl else None,
             away_wdl[0] if away_wdl else None, away_wdl[1] if away_wdl else None, away_wdl[2] if away_wdl else None,
@@ -128,14 +139,15 @@ def save_match(mid: int) -> int:
             'h2h':          h2h,
             'odds':         odds,
             'asian_odds':   asian_odds,
+            'over_under':   over_under,
             'league_table': query_league_table(mid),
         }
         hconn.execute("""
             INSERT OR REPLACE INTO saved_snapshots (
                 saved_match_id, match_json, extras_json,
                 recent_json, h2h_json, odds_json, asian_odds_json,
-                league_table_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                league_table_json, over_under_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             saved_id,
             json.dumps(snapshot['match'],        ensure_ascii=False),
@@ -145,6 +157,7 @@ def save_match(mid: int) -> int:
             json.dumps(snapshot['odds'],         ensure_ascii=False),
             json.dumps(snapshot['asian_odds'],   ensure_ascii=False),
             json.dumps(snapshot['league_table'], ensure_ascii=False),
+            json.dumps(snapshot['over_under'],   ensure_ascii=False),
         ))
 
     return saved_id
@@ -160,7 +173,7 @@ def load_snapshot(schedule_id: int) -> dict | None:
     row = hconn.execute("""
         SELECT s.match_json, s.extras_json, s.recent_json,
                s.h2h_json, s.odds_json, s.asian_odds_json,
-               s.league_table_json
+               s.league_table_json, s.over_under_json
         FROM saved_snapshots s
         JOIN saved_matches m ON m.id = s.saved_match_id
         WHERE m.schedule_id = ?
@@ -176,6 +189,7 @@ def load_snapshot(schedule_id: int) -> dict | None:
         'asian_odds':   json.loads(row[5]) if row[5] else None,
         # 旧快照 league_table_json 为 NULL 时回退读 quant.db，新记录走 JSON
         'league_table': json.loads(row[6]) if row[6] else query_league_table(schedule_id),
+        'over_under':   json.loads(row[7]) if row[7] else None,
     }
 
 
