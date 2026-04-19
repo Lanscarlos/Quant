@@ -125,14 +125,14 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
 
                 ui.separator().classes('my-2')
 
-                # ── 主客队各自近六场 ──────────────────────────────────
+                # ── 主客队各自近八场 ──────────────────────────────────
                 with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
                     render_recent_section(recent['home'], extras.get('home_wdl'), is_home=True,  border_right=True)
                     render_recent_section(recent['away'], extras.get('away_wdl'), is_home=False, border_right=False)
 
                 ui.separator().classes('my-2')
 
-                # ── 近六场交手 ────────────────────────────────────────
+                # ── 近八场交手 ────────────────────────────────────────
                 with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
                     render_h2h_section(h2h, fetched=True, border_right=False)
 

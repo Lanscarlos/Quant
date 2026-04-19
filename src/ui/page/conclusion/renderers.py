@@ -3,6 +3,10 @@ from nicegui import ui
 
 from .columns import ASIAN_COLS, H2H_COLS, ODDS_COLS, RECENT_COLS
 
+# 近期/交手表格固定显示 8 行，真实数据不足时用以下占位符补齐
+_RECENT_EMPTY = {'home_name': '-', 'away_name': '-', 'score': '-', 'h30_odds': '-', 'cur_odds': '-'}
+_H2H_EMPTY    = {'side': '-', 'home_name': '-', 'away_name': '-', 'score': '-', 'cur_odds': '-'}
+
 
 # ── Micro helpers ──────────────────────────────────────────────────────────────
 
@@ -22,7 +26,7 @@ def wdl_badges(win: int, draw: int, loss: int):
 
 def render_recent_section(rows: list, wdl: tuple | None, is_home: bool, border_right: bool = True):
     color_cls  = 'text-blue-700' if is_home else 'text-red-600'
-    title      = '主队近六场比赛:' if is_home else '客队近六场比赛:'
+    title      = '主队近八场比赛:' if is_home else '客队近八场比赛:'
     border_cls = 'border-r border-slate-200' if border_right else ''
 
     with ui.column().classes(f'flex-1 {border_cls} p-2 gap-1 min-w-0'):
@@ -30,27 +34,22 @@ def render_recent_section(rows: list, wdl: tuple | None, is_home: bool, border_r
             ui.label(title).classes(f'text-xs font-semibold {color_cls} flex-1 truncate')
             if wdl:
                 wdl_badges(*wdl)
-        if rows:
-            ui.table(columns=RECENT_COLS, rows=rows).classes('w-full text-xs').props('dense flat')
-        else:
-            no_data_hint()
+        # 始终渲染 8 行：真实数据在前，不足用占位符补齐
+        padded = (list(rows or []) + [_RECENT_EMPTY] * 8)[:8]
+        ui.table(columns=RECENT_COLS, rows=padded).classes('w-full text-xs').props('dense flat')
 
 
 def render_h2h_section(h2h: dict, fetched: bool = False, border_right: bool = True):
     border_cls = 'border-r border-slate-200' if border_right else ''
+    rows = (h2h or {}).get('rows') or []
     with ui.column().classes(f'flex-1 {border_cls} p-2 gap-1 min-w-0'):
         with ui.row().classes('w-full items-center gap-2'):
-            ui.label('近六场交手:').classes('text-xs font-semibold text-slate-600 flex-1')
-            if h2h['rows']:
+            ui.label('近八场交手:').classes('text-xs font-semibold text-slate-600 flex-1')
+            if rows:
                 wdl_badges(h2h['win'], h2h['draw'], h2h['loss'])
-        if h2h['rows']:
-            ui.table(columns=H2H_COLS, rows=h2h['rows']).classes('w-full text-xs').props('dense flat')
-        elif fetched:
-            with ui.row().classes('items-center gap-1 py-3 justify-center'):
-                ui.icon('info_outline').classes('text-slate-300 text-base')
-                ui.label('暂无历史交手记录').classes('text-xs text-slate-400')
-        else:
-            no_data_hint()
+        # 始终渲染 8 行：真实数据在前，不足用占位符补齐
+        padded = (rows + [_H2H_EMPTY] * 8)[:8]
+        ui.table(columns=H2H_COLS, rows=padded).classes('w-full text-xs').props('dense flat')
 
 
 _ODDS_EMPTY  = {'tag': '', 'win': '-', 'draw': '-', 'lose': '-', 'payout': '-', 'time': '-'}

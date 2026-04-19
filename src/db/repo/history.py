@@ -238,6 +238,79 @@ def _build_where_clause(filters: dict | None) -> tuple[str, list]:
     return where, params
 
 
+def backfill_recent_h2h() -> int:
+    """补全老快照中 recent/h2h 不足 8 条的记录。
+
+    老版本每侧近期赛事最多 6 条、交手查询限 6 条。本函数扫描 saved_snapshots，
+    若对应 quant.db 中仍保留完整原始数据，则重新生成 recent_json / h2h_json。
+    quant.db 中数据已被清理的快照静默跳过。返回实际重写的记录数。
+    """
+    hconn = get_history_conn()
+
+    rows = hconn.execute("""
+        SELECT m.id, m.schedule_id, s.recent_json, s.h2h_json
+        FROM saved_matches m
+        JOIN saved_snapshots s ON s.saved_match_id = m.id
+    """).fetchall()
+
+    updated = 0
+    for row in rows:
+        saved_id, mid = row[0], row[1]
+        recent_raw, h2h_raw = row[2], row[3]
+
+        try:
+            recent = json.loads(recent_raw) if recent_raw else {'home': [], 'away': []}
+            h2h    = json.loads(h2h_raw) if h2h_raw else {'rows': []}
+        except (TypeError, ValueError):
+            continue
+
+        home_len = len(recent.get('home') or [])
+        away_len = len(recent.get('away') or [])
+        h2h_len  = len((h2h or {}).get('rows') or [])
+
+        need_recent = home_len < 8 or away_len < 8
+        need_h2h    = h2h_len < 8
+        if not need_recent and not need_h2h:
+            continue
+
+        new_recent_json = None
+        new_h2h_json    = None
+
+        if need_recent:
+            fresh = query_recent_matches(mid)
+            fresh_home = len(fresh.get('home') or [])
+            fresh_away = len(fresh.get('away') or [])
+            # 仅在 quant.db 有更多数据时重写，避免无意义覆盖
+            if fresh_home > home_len or fresh_away > away_len:
+                new_recent_json = json.dumps(fresh, ensure_ascii=False)
+
+        if need_h2h:
+            fresh_h2h = query_h2h(mid)
+            if len(fresh_h2h.get('rows') or []) > h2h_len:
+                new_h2h_json = json.dumps(fresh_h2h, ensure_ascii=False)
+
+        if new_recent_json is None and new_h2h_json is None:
+            continue
+
+        sets, params = [], []
+        if new_recent_json is not None:
+            sets.append('recent_json = ?')
+            params.append(new_recent_json)
+        if new_h2h_json is not None:
+            sets.append('h2h_json = ?')
+            params.append(new_h2h_json)
+        params.append(saved_id)
+
+        with hconn:
+            hconn.execute(
+                f"UPDATE saved_snapshots SET {', '.join(sets)} WHERE saved_match_id = ?",
+                params,
+            )
+        updated += 1
+
+    return updated
+
+
 def backfill_h30() -> int:
     """Backfill wh_h30_* columns for existing saved_matches rows that have NULL values.
 

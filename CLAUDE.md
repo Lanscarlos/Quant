@@ -33,7 +33,7 @@ Both opened as WAL + FK ON, `row_factory=sqlite3.Row`, frozen-aware path resolut
 | Live | `data/quant.db` | All scraped data | `src/db/connection.py` + `schema.py` |
 | History | `data/history.db` | User-saved analysis snapshots | `src/db/history_connection.py` + `history_schema.py` |
 
-`quant.db` tables (14): dimension `leagues`, `teams`, `companies`; match `matches`, `match_standings` (16 rows/match = 2 sides × 2 periods × 4 scopes), `match_recent`, `match_h2h`, `league_table_snapshot` (pre-match league table, only for isShowIntegral=1 leagues); odds `odds_wh` / `odds_wh_history` (WH, company 115), `odds_coral` / `odds_coral_history` (Ladbrokes, company 82), `asian_odds_365` / `asian_odds_365_history` (Bet365).
+`quant.db` tables (14): dimension `leagues`, `teams`, `companies`; match `matches`, `match_standings` (16 rows/match = 2 sides × 2 periods × 4 scopes), `match_recent` (每侧最多 8 条近期赛事), `match_h2h` (最多 20 条交手), `league_table_snapshot` (pre-match league table, only for isShowIntegral=1 leagues); odds `odds_wh` / `odds_wh_history` (WH, company 115), `odds_coral` / `odds_coral_history` (Ladbrokes, company 82), `asian_odds_365` / `asian_odds_365_history` (Bet365).
 
 `history.db` tables: `saved_matches` (denormalized flat row for list/filter) + `saved_snapshots` (JSON blobs keyed by `saved_match_id` with ON DELETE CASCADE). Schema has inline `_migrate()` adding `wh_h30_*` columns.
 

@@ -13,7 +13,8 @@ from pathlib import Path
 from nicegui import ui, run
 
 from src.db.repo.history import (
-    list_saved_matches, list_distinct_leagues, list_distinct_teams, backfill_h30,
+    list_saved_matches, list_distinct_leagues, list_distinct_teams,
+    backfill_h30, backfill_recent_h2h,
     export_to_json, export_to_csv, import_from_json,
 )
 
@@ -401,6 +402,7 @@ def render(on_match_click: callable = None):
     print_btn.on_click(lambda: ui.notify('打印功能待实现', type='info'))
     refresh_btn.on_click(_on_refresh)
 
-    # 初始加载（顺带补全旧记录的 h30 数据）
+    # 初始加载（顺带补全旧记录的 h30 数据与 8 场近期/交手快照）
     backfill_h30()
+    backfill_recent_h2h()
     _reload()

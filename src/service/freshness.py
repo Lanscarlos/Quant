@@ -77,6 +77,15 @@ def match_ids_needing_refresh(filter_ids: list[int]) -> list[int]:
 _DETAIL_STALE = timedelta(hours=6)
 
 
+def _recent_needs_backfill(conn, schedule_id: int) -> bool:
+    """老版本 match_recent 每侧上限 6 条；若任一侧恰为 6 则视为旧数据，需补抓到 8 条。"""
+    rows = conn.execute(
+        "SELECT side, COUNT(*) FROM match_recent WHERE schedule_id = ? GROUP BY side",
+        (schedule_id,),
+    ).fetchall()
+    return bool(rows) and any(int(r[1]) == 6 for r in rows)
+
+
 def should_fetch_detail(schedule_id: int, *, status: int | None = None) -> bool:
     """True → 调用 fetch_match_detail()；False → 直接读 DB。"""
     conn = get_conn()
@@ -86,6 +95,9 @@ def should_fetch_detail(schedule_id: int, *, status: int | None = None) -> bool:
     ).fetchone()
     if status is None:
         status = _match_status(schedule_id)
+    # 近期赛事历史数据兼容：老代码每侧最多 6 条，扩展到 8 条需一次性补抓
+    if _recent_needs_backfill(conn, schedule_id):
+        return True
     if status == -1:
         if row is None:
             return True   # 完场：standings 完全没有，需要抓

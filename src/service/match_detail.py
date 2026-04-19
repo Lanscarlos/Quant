@@ -168,7 +168,7 @@ def _parse_team_html(html_str: str) -> tuple[str, int | None]:
     return name, rank
 
 
-def _parse_match_array(html: str, data_var: str, limit: int = 6) -> list[dict]:
+def _parse_match_array(html: str, data_var: str, limit: int = 8) -> list[dict]:
     """解析 h_data / a_data / v_data 内联 JS 数组。"""
     m = re.search(rf"var {data_var}\s*=\s*(\[.*?\]);", html, re.DOTALL)
     if not m:

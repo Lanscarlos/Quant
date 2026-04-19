@@ -88,7 +88,7 @@ _DDL = [
     "CREATE INDEX IF NOT EXISTS idx_standings_match ON match_standings(schedule_id)",
 
     # ------------------------------------------------------------------
-    # 5. match_recent — 近6场比赛历史
+    # 5. match_recent — 近8场比赛历史
     # ------------------------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS match_recent (

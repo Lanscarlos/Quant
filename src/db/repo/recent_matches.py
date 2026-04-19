@@ -2,7 +2,7 @@
 Repository: match_recent
 
 Writes recent-match history rows from match_detail results.
-Each match produces up to 12 rows: 2 sides × up to 6 recent matches.
+Each match produces up to 16 rows: 2 sides × up to 8 recent matches.
 Strategy: INSERT OR REPLACE on UNIQUE(schedule_id, side, match_id).
 """
 import sqlite3

@@ -72,7 +72,7 @@ def query_h2h(mid: int) -> dict:
         LEFT JOIN odds_wh wo ON wo.schedule_id = h.match_id
         WHERE h.schedule_id = ?
         ORDER BY h.date DESC
-        LIMIT 6
+        LIMIT 8
     """, (mid,)).fetchall()
 
     result_rows, win, draw, loss = [], 0, 0, 0
