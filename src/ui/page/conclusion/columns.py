@@ -17,7 +17,6 @@ H2H_COLS = [
 ]
 
 ODDS_COLS = [
-    {'name': 'tag',    'label': '',      'field': 'tag',    'align': 'center'},
     {'name': 'win',    'label': '胜',    'field': 'win',    'align': 'center'},
     {'name': 'draw',   'label': '和',    'field': 'draw',   'align': 'center'},
     {'name': 'lose',   'label': '负',    'field': 'lose',   'align': 'center'},
@@ -26,7 +25,6 @@ ODDS_COLS = [
 ]
 
 ASIAN_COLS = [
-    {'name': 'tag',  'label': '',       'field': 'tag',  'align': 'center'},
     {'name': 'home', 'label': '主队',    'field': 'home', 'align': 'center'},
     {'name': 'hc',   'label': '盘口',    'field': 'hc',   'align': 'center'},
     {'name': 'away', 'label': '客队',    'field': 'away', 'align': 'center'},

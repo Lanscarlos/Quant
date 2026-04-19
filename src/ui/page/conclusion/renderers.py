@@ -52,10 +52,8 @@ def render_h2h_section(h2h: dict, fetched: bool = False, border_right: bool = Tr
         ui.table(columns=H2H_COLS, rows=padded).classes('w-full text-xs').props('dense flat')
 
 
-_ODDS_EMPTY  = {'tag': '', 'win': '-', 'draw': '-', 'lose': '-', 'payout': '-', 'time': '-'}
-_ASIAN_EMPTY = {'tag': '', 'home': '-', 'hc': '-', 'away': '-', 'time': '-', 'data': '-'}
-
-_TAG_SLOT = '<q-td :props="props"><q-badge v-if="props.value" color="amber-8" :label="props.value" /></q-td>'
+_ODDS_EMPTY  = {'win': '-', 'draw': '-', 'lose': '-', 'payout': '-', 'time': '-'}
+_ASIAN_EMPTY = {'home': '-', 'hc': '-', 'away': '-', 'time': '-', 'data': '-'}
 
 
 def _dir_slot(dir_field: str) -> str:
@@ -74,10 +72,8 @@ def render_odds_section(odds: dict, label: str, company_key: str, border_right: 
         if company_data:
             history = company_data['history']
             padded  = (history + [_ODDS_EMPTY] * 5)[:5]
-            open_r  = {**company_data['open'], 'tag': '初始'}
-            hist_rs = [{**r, 'tag': ''} for r in padded]
-            t = ui.table(columns=ODDS_COLS, rows=[open_r] + hist_rs).classes('w-full text-xs').props('dense flat')
-            t.add_slot('body-cell-tag',  _TAG_SLOT)
+            open_r  = company_data['open']
+            t = ui.table(columns=ODDS_COLS, rows=[open_r] + padded).classes('w-full text-xs').props('dense flat')
             t.add_slot('body-cell-win',  _dir_slot('win_dir'))
             t.add_slot('body-cell-draw', _dir_slot('draw_dir'))
             t.add_slot('body-cell-lose', _dir_slot('lose_dir'))
@@ -91,10 +87,9 @@ def render_asian_section(asian_row: dict | None):
         if asian_row:
             history = asian_row['history']
             padded  = (history + [_ASIAN_EMPTY] * 3)[:3]
-            open_r  = {**asian_row['open'], 'tag': '初始', 'data': '-'}
-            rows    = [open_r] + [{**r, 'tag': '', 'data': '-'} for r in padded]
+            open_r  = {**asian_row['open'], 'data': '-'}
+            rows    = [open_r] + [{**r, 'data': '-'} for r in padded]
             t = ui.table(columns=ASIAN_COLS, rows=rows).classes('w-full text-xs').props('dense flat')
-            t.add_slot('body-cell-tag',  _TAG_SLOT)
             t.add_slot('body-cell-home', _dir_slot('home_dir'))
             t.add_slot('body-cell-away', _dir_slot('away_dir'))
         else:
