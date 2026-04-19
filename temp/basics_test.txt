@@ -1,1 +1,0 @@
-{'schedule_id': 2963060, 'match_time': '2026-04-08 03:00', 'league_name_cn': '欧冠杯', 'home_team': '里斯本竞技', 'away_team': '阿森纳'}
