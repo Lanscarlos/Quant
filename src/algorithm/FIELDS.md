@@ -1,5 +1,61 @@
 # 算法可用字段参考手册
 
+## 零、如何获取 mid（赛事 ID）
+
+自定义算法通常在**结论页**中调用。结论页的核心文件是：
+
+```
+src/ui/page/conclusion/index.py
+```
+
+### 方式一：在 `conclusion_body()` 中调用（推荐）
+
+打开 `index.py`，找到 `conclusion_body()` 函数（约第 175 行），在 `data = load_all_from_quant(mid)` **之后**插入你的算法调用：
+
+```python
+@ui.refreshable
+def conclusion_body():
+    mid = state['mid']          # ← mid 就在这里，自动由点击赛事时传入
+    if not mid:
+        ...
+        return
+
+    data = load_all_from_quant(mid)   # 原有加载逻辑，保持不动
+
+    # ── 在这里调用你的算法 ──────────────────────────────
+    from src.algorithm import load_match
+    from src.algorithm.my_algo import run   # 你自己写的算法模块
+
+    match_data = load_match(mid)
+    result = run(match_data)            # result 是你算法返回的任何值
+    print(result)                       # 或者存到变量里在下面使用
+    # ────────────────────────────────────────────────────
+
+    if not data or not data.get('match'):
+        ...
+```
+
+### 方式二：在 `_render_body()` 中调用
+
+如果你想在渲染函数里直接使用算法结果，`mid` 可以从已加载的 `data` 里取得：
+
+```python
+def _render_body(data: dict, ...):
+    match = data['match']
+    mid = match['schedule_id']   # ← 从已加载数据中取 mid
+
+    from src.algorithm import load_match
+    match_data = load_match(mid)
+    # ... 使用 match_data
+```
+
+### mid 是什么
+
+`mid` 即 **赛事 ID**（数据库里的 `schedule_id`），是一个整数，例如 `2312345`。
+每场比赛唯一对应一个 `mid`，在点击赛事列表时由系统自动传入结论页，无需手动填写。
+
+---
+
 本文档列出 `load_match(mid)` 返回字典中所有可用字段，按分类说明含义、数据类型和示例值。
 
 ```python
