@@ -11,3 +11,5 @@
 /data/history.db
 /data/history.db-shm
 /data/history.db-wal
+.narrafork/
+.worktrees/
