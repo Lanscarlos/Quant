@@ -4,6 +4,7 @@
 External API:
   render() — registered with the Router, returns trigger(mid) callback
 """
+import asyncio
 import subprocess
 
 from nicegui import ui
@@ -13,7 +14,9 @@ from .queries import load_all_from_quant
 from .renderers import render_asian_section, render_h2h_section, render_league_table_section, render_odds_section, render_over_under_section, render_recent_section, wdl_badges
 
 
-def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live', table_vis: dict | None = None) -> None:
+def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live',
+                 table_vis: dict | None = None, fetch_state: dict | None = None,
+                 on_refresh_odds=None) -> None:
     """渲染结论主体内容。data 是 load_all_from_quant / load_snapshot 返回的统一数据包。"""
     match = data['match']
     if not match:
@@ -55,6 +58,20 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
                 if on_refetch:
                     on_refetch(match['schedule_id'])
             ui.button('重新抓取', icon='refresh', on_click=_do_refetch).props('outline size=sm color=warning')
+            if source == 'live' and on_refresh_odds:
+                # 点击时直接操作元素属性（不走 conclusion_body.refresh()），
+                # 属性变更在首个 await 处推送给浏览器，用户可即时看到加载状态。
+                async def _on_refresh_click():
+                    if (fetch_state or {}).get('loading'):
+                        return
+                    _refresh_btn.props(add='loading')
+                    _refresh_btn.set_enabled(False)
+                    _status_lbl.set_text('欧赔 & 亚盘…')
+                    await on_refresh_odds(_status_lbl)
+                _refresh_btn = ui.button('刷新赔率', icon='refresh',
+                                         on_click=_on_refresh_click
+                                         ).props('outline size=sm color=info')
+                _status_lbl = ui.label('').classes('text-xs text-slate-400 self-center')
             def _open_in_chrome():
                 url = f'https://zq.titan007.com/analysis/{match["schedule_id"]}sb.htm'
                 subprocess.Popen(['cmd', '/c', 'start', 'chrome', url])
@@ -165,8 +182,49 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
 
 
 def render(on_back: callable = None, on_refetch: callable = None):
-    state     = {'mid': None, 'source': 'live'}
-    table_vis = {'open': True}
+    state      = {'mid': None, 'source': 'live'}
+    table_vis  = {'open': True}
+    fetch_state = {'loading': False}
+
+    async def _start_odds_refresh(status_label=None):
+        """在结论页内直接抓取欧赔+亚盘四个步骤，无需跳转 fetch 页。
+        status_label: 由 _render_body 传入的状态标签，用于实时显示进度文字。
+        """
+        if fetch_state['loading'] or not state['mid']:
+            return
+        # 在任何 conclusion_body.refresh() 销毁元素之前捕获 client.content，
+        # 以便后续通过 with _client_content: 重建 slot 上下文调用 ui.notify()。
+        from nicegui.context import context as _nicegui_ctx
+        _client_content = _nicegui_ctx.client.content
+        from src.ui.page.fetch.steps import (
+            StepEuroOdds, StepAsianOdds, StepEuroHistory, StepAsianHistory,
+        )
+        fetch_state['loading'] = True
+        mid_str = str(state['mid'])
+        ctx: dict = {}
+        try:
+            # Phase 3 并行抓取；await 处事件循环得以运行，按钮 loading 状态推送至浏览器
+            await asyncio.gather(
+                StepEuroOdds.fetch(mid_str, ctx),
+                StepAsianOdds.fetch(mid_str, ctx),
+            )
+            if status_label:
+                status_label.set_text('历史数据…')
+            # Phase 4 并行抓取
+            await asyncio.gather(
+                StepEuroHistory.fetch(mid_str, ctx),
+                StepAsianHistory.fetch(mid_str, ctx),
+            )
+        except Exception as exc:
+            fetch_state['loading'] = False
+            conclusion_body.refresh()
+            with _client_content:
+                ui.notify(f'刷新失败：{exc}', type='negative')
+            return
+        fetch_state['loading'] = False
+        conclusion_body.refresh()
+        with _client_content:
+            ui.notify('赔率刷新成功', type='positive')
 
     # ── 布局 ──────────────────────────────────────────────────────────────────
     with ui.scroll_area().classes('w-full h-full'):
@@ -192,7 +250,9 @@ def render(on_back: callable = None, on_refetch: callable = None):
                     ui.label('未找到赛事数据').classes('text-sm text-slate-400')
                     return
 
-                _render_body(data, on_back=on_back, on_refetch=on_refetch, source=state['source'], table_vis=table_vis)
+                _render_body(data, on_back=on_back, on_refetch=on_refetch, source=state['source'],
+                             table_vis=table_vis, fetch_state=fetch_state,
+                             on_refresh_odds=_start_odds_refresh)
 
             conclusion_body()
 
