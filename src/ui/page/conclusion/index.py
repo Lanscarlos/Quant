@@ -14,8 +14,8 @@ from .queries import load_all_from_quant
 from .renderers import render_asian_section, render_h2h_section, render_league_table_section, render_odds_section, render_over_under_section, render_recent_section, wdl_badges
 
 
-def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live',
-                 table_vis: dict | None = None) -> None:
+def _render_body(data: dict, on_back=None, on_refetch=None, on_refresh_odds=None,
+                 source: str = 'live', table_vis: dict | None = None) -> None:
     """渲染结论主体内容。data 是 load_all_from_quant / load_snapshot 返回的统一数据包。"""
     match = data['match']
     if not match:
@@ -57,6 +57,8 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
                 if on_refetch:
                     on_refetch(match['schedule_id'])
             ui.button('重新抓取', icon='refresh', on_click=_do_refetch).props('outline size=sm color=warning')
+            if on_refresh_odds:
+                ui.button('刷新赔率', icon='sync', on_click=on_refresh_odds).props('outline size=sm color=accent')
             def _open_in_chrome():
                 url = f'https://zq.titan007.com/analysis/{match["schedule_id"]}sb.htm'
                 subprocess.Popen(['cmd', '/c', 'start', 'chrome', url])
@@ -246,8 +248,9 @@ def render(on_back: callable = None, on_refetch: callable = None):
                     ui.label('未找到赛事数据').classes('text-sm text-slate-400')
                     return
 
-                _render_body(data, on_back=on_back, on_refetch=on_refetch, source=state['source'],
-                             table_vis=table_vis)
+                _render_body(data, on_back=on_back, on_refetch=on_refetch,
+                             on_refresh_odds=(lambda: _start_odds_refresh()) if state['source'] == 'live' else None,
+                             source=state['source'], table_vis=table_vis)
 
             conclusion_body()
 
@@ -280,17 +283,8 @@ def render(on_back: callable = None, on_refetch: callable = None):
         msg   = refresh_state['msg']
 
         if phase == 'idle':
-            # 空闲态：圆形 FAB 按钮
-            with ui.element('div').classes(
-                'fixed bottom-5 right-5 z-50 odds-badge-enter'
-            ):
-                btn = ui.button(
-                    icon='refresh',
-                    on_click=lambda: _start_odds_refresh(),
-                ).props('fab color=primary').classes(
-                    '!shadow-lg hover:!shadow-xl transition-shadow'
-                )
-                btn.tooltip('刷新赔率')
+            # 空闲态：按钮已移至操作栏，右下角不显示任何内容
+            return
 
         elif phase == 'loading':
             # 加载态：胶囊展开，带呼吸动画
