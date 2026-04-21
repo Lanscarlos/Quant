@@ -4,6 +4,7 @@
 External API:
   render() — registered with the Router, returns trigger(mid) callback
 """
+import asyncio
 import subprocess
 
 from nicegui import ui
@@ -13,7 +14,8 @@ from .queries import load_all_from_quant
 from .renderers import render_asian_section, render_h2h_section, render_league_table_section, render_odds_section, render_over_under_section, render_recent_section, wdl_badges
 
 
-def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live', table_vis: dict | None = None) -> None:
+def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live',
+                 table_vis: dict | None = None) -> None:
     """渲染结论主体内容。data 是 load_all_from_quant / load_snapshot 返回的统一数据包。"""
     match = data['match']
     if not match:
@@ -87,7 +89,7 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
                     with ui.column().classes('flex-1 items-end gap-0'):
                         with ui.row().classes('items-baseline gap-1 justify-end'):
                             if match['home_rank'] is not None:
-                                ui.label(str(match['home_rank'])).classes('text-sm text-slate-400')
+                                ui.label(str(match['home_rank'])).classes('text-lg font-bold text-blue-700')
                             ui.label(match['home_team']).classes('text-lg font-bold text-blue-700')
                         with ui.row().classes('items-center gap-3'):
                             with ui.row().classes('items-center gap-1'):
@@ -112,7 +114,7 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
                     with ui.column().classes('flex-1 items-start gap-0'):
                         with ui.row().classes('items-baseline gap-1'):
                             if match['away_rank'] is not None:
-                                ui.label(str(match['away_rank'])).classes('text-sm text-slate-400')
+                                ui.label(str(match['away_rank'])).classes('text-lg font-bold text-red-600')
                             ui.label(match['away_team']).classes('text-lg font-bold text-red-600')
                         with ui.row().classes('items-center gap-3'):
                             if extras.get('away_wdl'):
@@ -165,8 +167,60 @@ def _render_body(data: dict, on_back=None, on_refetch=None, source: str = 'live'
 
 
 def render(on_back: callable = None, on_refetch: callable = None):
-    state     = {'mid': None, 'source': 'live'}
-    table_vis = {'open': True}
+    state      = {'mid': None, 'source': 'live'}
+    table_vis  = {'open': True}
+
+    # 悬浮指示器状态：idle / loading / done / error
+    refresh_state = {'phase': 'idle', 'msg': ''}
+
+    async def _start_odds_refresh():
+        """在结论页内直接抓取欧赔+亚盘四个步骤，无需跳转 fetch 页。"""
+        if refresh_state['phase'] == 'loading' or not state['mid']:
+            return
+        # 在任何 conclusion_body.refresh() 销毁元素之前捕获 client.content，
+        # 以便后续通过 with _client_content: 重建 slot 上下文调用 ui.notify()。
+        from nicegui.context import context as _nicegui_ctx
+        _client_content = _nicegui_ctx.client.content
+        from src.ui.page.fetch.steps import (
+            StepEuroOdds, StepAsianOdds, StepEuroHistory, StepAsianHistory,
+        )
+        refresh_state['phase'] = 'loading'
+        refresh_state['msg'] = '欧赔 & 亚盘…'
+        _odds_refresh_badge.refresh()
+        mid_str = str(state['mid'])
+        ctx: dict = {}
+        try:
+            # Phase 3 并行抓取；await 处事件循环得以运行，悬浮指示器状态推送至浏览器
+            await asyncio.gather(
+                StepEuroOdds.fetch(mid_str, ctx),
+                StepAsianOdds.fetch(mid_str, ctx),
+            )
+            refresh_state['msg'] = '历史数据…'
+            _odds_refresh_badge.refresh()
+            # Phase 4 并行抓取
+            await asyncio.gather(
+                StepEuroHistory.fetch(mid_str, ctx),
+                StepAsianHistory.fetch(mid_str, ctx),
+            )
+        except Exception as exc:
+            refresh_state['phase'] = 'error'
+            refresh_state['msg'] = f'刷新失败：{str(exc)[:40]}'
+            _odds_refresh_badge.refresh()
+            conclusion_body.refresh()
+            # 3 秒后恢复空闲态
+            ui.timer(3.0, lambda: _reset_refresh_state(), once=True)
+            return
+        refresh_state['phase'] = 'done'
+        refresh_state['msg'] = '刷新完成'
+        _odds_refresh_badge.refresh()
+        conclusion_body.refresh()
+        # 2 秒后恢复空闲态
+        ui.timer(2.0, lambda: _reset_refresh_state(), once=True)
+
+    def _reset_refresh_state():
+        refresh_state['phase'] = 'idle'
+        refresh_state['msg'] = ''
+        _odds_refresh_badge.refresh()
 
     # ── 布局 ──────────────────────────────────────────────────────────────────
     with ui.scroll_area().classes('w-full h-full'):
@@ -192,9 +246,83 @@ def render(on_back: callable = None, on_refetch: callable = None):
                     ui.label('未找到赛事数据').classes('text-sm text-slate-400')
                     return
 
-                _render_body(data, on_back=on_back, on_refetch=on_refetch, source=state['source'], table_vis=table_vis)
+                _render_body(data, on_back=on_back, on_refetch=on_refetch, source=state['source'],
+                             table_vis=table_vis)
 
             conclusion_body()
+
+    # ── 右下角悬浮刷新赔率指示器 ──────────────────────────────────────────────
+    # 注入呼吸动画 CSS（仅一次）
+    ui.add_css('''
+    @keyframes odds-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.4); }
+        50%      { box-shadow: 0 0 0 8px rgba(59,130,246,0); }
+    }
+    .odds-badge-loading {
+        animation: odds-pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes odds-fade-in {
+        from { opacity: 0; transform: translateY(8px) scale(0.95); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .odds-badge-enter {
+        animation: odds-fade-in 0.25s ease-out;
+    }
+    ''')
+
+    @ui.refreshable
+    def _odds_refresh_badge():
+        # 仅在 live 模式且有赛事时显示
+        if state['source'] != 'live' or not state['mid']:
+            return
+
+        phase = refresh_state['phase']
+        msg   = refresh_state['msg']
+
+        if phase == 'idle':
+            # 空闲态：圆形 FAB 按钮
+            with ui.element('div').classes(
+                'fixed bottom-5 right-5 z-50 odds-badge-enter'
+            ):
+                btn = ui.button(
+                    icon='refresh',
+                    on_click=lambda: _start_odds_refresh(),
+                ).props('fab color=primary').classes(
+                    '!shadow-lg hover:!shadow-xl transition-shadow'
+                )
+                btn.tooltip('刷新赔率')
+
+        elif phase == 'loading':
+            # 加载态：胶囊展开，带呼吸动画
+            with ui.row().classes(
+                'fixed bottom-5 right-5 z-50 items-center gap-2 px-4 py-2.5 '
+                'bg-white rounded-full shadow-lg border border-blue-200 '
+                'odds-badge-loading odds-badge-enter select-none'
+            ):
+                ui.spinner('dots', size='sm', color='blue')
+                ui.label(msg).classes('text-sm font-medium text-blue-600 whitespace-nowrap')
+
+        elif phase == 'done':
+            # 完成态：绿色胶囊
+            with ui.row().classes(
+                'fixed bottom-5 right-5 z-50 items-center gap-2 px-4 py-2.5 '
+                'bg-green-50 rounded-full shadow-lg border border-green-300 '
+                'odds-badge-enter select-none'
+            ):
+                ui.icon('check_circle').classes('text-green-600 text-lg')
+                ui.label(msg).classes('text-sm font-medium text-green-600 whitespace-nowrap')
+
+        elif phase == 'error':
+            # 失败态：红色胶囊
+            with ui.row().classes(
+                'fixed bottom-5 right-5 z-50 items-center gap-2 px-4 py-2.5 '
+                'bg-red-50 rounded-full shadow-lg border border-red-300 '
+                'odds-badge-enter select-none'
+            ):
+                ui.icon('error_outline').classes('text-red-500 text-lg')
+                ui.label(msg).classes('text-sm font-medium text-red-500 whitespace-nowrap')
+
+    _odds_refresh_badge()
 
     # ── 外部 API ──────────────────────────────────────────────────────────────
 
@@ -203,6 +331,10 @@ def render(on_back: callable = None, on_refetch: callable = None):
         state['mid']      = int(mid)
         state['source']   = source
         table_vis['open'] = True
+        # 切换赛事时重置悬浮指示器
+        refresh_state['phase'] = 'idle'
+        refresh_state['msg'] = ''
         conclusion_body.refresh()
+        _odds_refresh_badge.refresh()
 
     return trigger
