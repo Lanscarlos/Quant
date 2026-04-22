@@ -53,8 +53,8 @@ def render_h2h_section(h2h: dict, fetched: bool = False, border_right: bool = Tr
 
 
 _ODDS_EMPTY  = {'win': '-', 'draw': '-', 'lose': '-', 'payout': '-', 'time': '-'}
-_ASIAN_EMPTY = {'home': '-', 'hc': '-', 'away': '-', 'time': '-', 'data': '-'}
-_OU_EMPTY    = {'over': '-', 'goals': '-', 'under': '-', 'time': '-', 'data': '-'}
+_ASIAN_EMPTY = {'home': '-', 'hc': '-', 'away': '-', 'time': '-'}
+_OU_EMPTY    = {'over': '-', 'goals': '-', 'under': '-', 'time': '-'}
 
 
 def _dir_slot(dir_field: str) -> str:
@@ -89,8 +89,8 @@ def render_asian_section(asian_row: dict | None, border_right: bool = False):
         if asian_row:
             history = asian_row['history']
             padded  = (history + [_ASIAN_EMPTY] * 3)[:3]
-            open_r  = {**asian_row['open'], 'data': '-'}
-            rows    = [open_r] + [{**r, 'data': '-'} for r in padded]
+            open_r  = asian_row['open']
+            rows    = [open_r] + padded
             t = ui.table(columns=ASIAN_COLS, rows=rows).classes('w-full text-xs').props('dense flat')
             t.add_slot('body-cell-home', _dir_slot('home_dir'))
             t.add_slot('body-cell-away', _dir_slot('away_dir'))
@@ -104,8 +104,8 @@ def render_over_under_section(ou_row: dict | None):
         if ou_row:
             history = ou_row['history']
             padded  = (history + [_OU_EMPTY] * 3)[:3]
-            open_r  = {**ou_row['open'], 'data': '-'}
-            rows    = [open_r] + [{**r, 'data': '-'} for r in padded]
+            open_r  = ou_row['open']
+            rows    = [open_r] + padded
             t = ui.table(columns=OVER_UNDER_COLS, rows=rows).classes('w-full text-xs').props('dense flat')
             t.add_slot('body-cell-over',  _dir_slot('over_dir'))
             t.add_slot('body-cell-under', _dir_slot('under_dir'))

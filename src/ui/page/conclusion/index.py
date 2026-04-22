@@ -50,7 +50,6 @@ def _render_body(data: dict, on_back=None, on_refetch=None, on_refresh_odds=None
             ui.button('数据分析初始', on_click=lambda: ui.notify('数据分析初始')).props('outline size=sm')
             ui.button('结果保存',     on_click=_on_save).props('outline size=sm')
             ui.button('历史数据加载', on_click=lambda: ui.notify('历史数据加载')).props('outline size=sm')
-            ui.button('历史数据页面', on_click=lambda: ui.notify('历史数据页面')).props('outline size=sm')
             ui.button('反向为图片',   on_click=lambda: ui.notify('反向为图片')).props('outline size=sm')
             ui.button('分析结果打印', on_click=lambda: ui.notify('分析结果打印')).props('outline size=sm')
             def _do_refetch():
@@ -226,7 +225,7 @@ def render(on_back: callable = None, on_refetch: callable = None):
 
     # ── 布局 ──────────────────────────────────────────────────────────────────
     with ui.scroll_area().classes('w-full h-full'):
-        with ui.column().classes('w-full p-4'):
+        with ui.column().classes('w-full px-4 pt-1 pb-4'):
 
             @ui.refreshable
             def conclusion_body():
