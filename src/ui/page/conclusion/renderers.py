@@ -4,7 +4,7 @@ from nicegui import ui
 from .columns import ASIAN_COLS, H2H_COLS, ODDS_COLS, OVER_UNDER_COLS, RECENT_COLS
 
 # 近期/交手表格固定显示 8 行，真实数据不足时用以下占位符补齐
-_RECENT_EMPTY = {'home_name': '-', 'away_name': '-', 'score': '-', 'h30_odds': '-', 'cur_odds': '-'}
+_RECENT_EMPTY = {'home_name': '-', 'away_name': '-', 'score': '-', 'h30_odds': '-', 'cur_odds': '-', 'date': '-'}
 _H2H_EMPTY    = {'side': '-', 'home_name': '-', 'away_name': '-', 'score': '-', 'cur_odds': '-'}
 
 

@@ -6,6 +6,7 @@ RECENT_COLS = [
     {'name': 'score', 'label': '比分',          'field': 'score',     'align': 'center'},
     {'name': 'h30',   'label': '赛前半小时赔率', 'field': 'h30_odds',  'align': 'center'},
     {'name': 'cur',   'label': '最终赔率',      'field': 'cur_odds',  'align': 'center'},
+    {'name': 'date',  'label': '日期',          'field': 'date',      'align': 'center'},
 ]
 
 H2H_COLS = [

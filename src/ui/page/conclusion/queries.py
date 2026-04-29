@@ -108,7 +108,7 @@ def query_recent_matches(mid: int) -> dict:
             mr.home_name, mr.away_name, mr.home_ft, mr.away_ft,
             wo.cur_win, wo.cur_draw, wo.cur_lose,
             h30.win,    h30.draw,    h30.lose,
-            mr.home_rank, mr.away_rank
+            mr.home_rank, mr.away_rank, mr.date
         FROM match_recent mr
         LEFT JOIN odds_wh wo ON wo.schedule_id = mr.match_id
         LEFT JOIN (
@@ -145,6 +145,7 @@ def query_recent_matches(mid: int) -> dict:
             'score':     score,
             'h30_odds':  f"{fmt_float(r[9])}/{fmt_float(r[10])}/{fmt_float(r[11])}",
             'cur_odds':  f"{fmt_float(r[6])}/{fmt_float(r[7])}/{fmt_float(r[8])}",
+            'date':      ('20' + r[14]) if r[14] else '-',
         })
     return result
 
