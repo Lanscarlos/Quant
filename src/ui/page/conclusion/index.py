@@ -136,11 +136,12 @@ def _render_body(data: dict, on_back=None, on_refetch=None, on_refresh_odds=None
 
                 ui.separator().classes('my-2')
 
-                # ── 近八场交手 + 365亚盘 + 365大小球 (1:1:1) ─────────
+                # ── 近八场交手 + 365亚盘 + 365大小球 (2:1:1) ─────────
                 with ui.row().classes('w-full gap-0 items-start border border-slate-200 rounded'):
                     render_h2h_section(h2h, fetched=True, border_right=True)
-                    render_asian_section(asian_odds, border_right=True)
-                    render_over_under_section(over_under)
+                    with ui.row().classes('flex-1 gap-0 items-start'):
+                        render_asian_section(asian_odds, border_right=True)
+                        render_over_under_section(over_under)
 
                 ui.separator().classes('my-2')
 
